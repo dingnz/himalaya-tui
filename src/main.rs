@@ -21,6 +21,8 @@ use himalaya_tui::ui;
 
 #[cfg(feature = "imap")]
 use himalaya_tui::imap;
+#[cfg(feature = "smtp")]
+use himalaya_tui::smtp;
 
 fn main() -> Result<()> {
     let log_file = File::create("/tmp/himalaya-tui.log")?;
@@ -196,7 +198,40 @@ fn handle_compose_dialog(app: &mut App, key: KeyCode) {
             let action = app.get_selected_compose_action();
             match action {
                 ComposeAction::Send => {
-                    app.set_status("SMTP not configured yet");
+                    #[cfg(feature = "smtp")]
+                    {
+                        let Some(smtp_config) = app.smtp_config.clone() else {
+                            app.set_status("SMTP not configured");
+                            return;
+                        };
+
+                        let content = app.get_compose_content();
+                        app.set_status("Compiling message...");
+
+                        match MmlCompilerBuilder::new().build(&content) {
+                            Ok(compiler) => match compiler.compile() {
+                                Ok(result) => match result.into_vec() {
+                                    Ok(mime_bytes) => {
+                                        app.set_status("Sending message...");
+                                        match smtp::send_message(&smtp_config, &mime_bytes) {
+                                            Ok(()) => {
+                                                app.set_status("Message sent");
+                                                app.cancel_compose();
+                                            }
+                                            Err(e) => app.set_status(format!("Send error: {e}")),
+                                        }
+                                    }
+                                    Err(e) => app.set_status(format!("Error: {e}")),
+                                },
+                                Err(e) => app.set_status(format!("Compile error: {e}")),
+                            },
+                            Err(e) => app.set_status(format!("Parse error: {e}")),
+                        }
+                    }
+                    #[cfg(not(feature = "smtp"))]
+                    {
+                        app.set_status("SMTP feature not enabled");
+                    }
                 }
                 ComposeAction::Preview => {
                     let content = app.get_compose_content();

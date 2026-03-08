@@ -44,12 +44,26 @@ pub struct AccountConfig {
     #[serde(default)]
     pub default: bool,
     pub imap: Option<ImapConfig>,
+    pub smtp: Option<SmtpConfig>,
     #[serde(deserialize_with = "shell_expanded_string")]
     pub email: String,
     pub display_name: Option<String>,
     pub signature: Option<String>,
     pub signature_delim: Option<String>,
     pub downloads_dir: Option<PathBuf>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct SmtpConfig {
+    pub url: Url,
+
+    #[serde(default)]
+    pub tls: TlsConfig,
+    #[serde(default)]
+    pub starttls: bool,
+    #[serde(default)]
+    pub sasl: SaslConfig,
 }
 
 #[derive(Clone, Debug, Deserialize)]

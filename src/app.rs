@@ -5,7 +5,7 @@ use edtui::{EditorMode, EditorState, Lines};
 use mml::template::{self, TemplateCursor};
 use pimalaya_toolbox::config::TomlConfig;
 
-use crate::config::{Config, ImapConfig};
+use crate::config::{Config, ImapConfig, SmtpConfig};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Panel {
@@ -121,6 +121,7 @@ pub struct App {
     pub display_name: String,
     pub signature: String,
     pub imap_config: ImapConfig,
+    pub smtp_config: Option<SmtpConfig>,
     pub status_message: Option<String>,
 
     // Message viewing
@@ -155,6 +156,8 @@ impl App {
             .or(config.signature)
             .unwrap_or_default();
 
+        let smtp_config = account_config.smtp;
+
         Ok(Self {
             running: true,
             active_panel: Panel::Mailboxes,
@@ -168,6 +171,7 @@ impl App {
             display_name,
             signature,
             imap_config,
+            smtp_config,
             status_message: Some("Loading mailboxes...".to_string()),
             bottom_panel_mode: BottomPanelMode::None,
             message_content: None,
