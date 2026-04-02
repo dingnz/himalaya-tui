@@ -52,7 +52,14 @@ pub fn render_envelopes(frame: &mut Frame, app: &App, area: Rect) {
             " Envelopes{} ",
             app.selected_mailbox
                 .as_ref()
-                .map(|m| format!(" - {}", m))
+                .map(|m| {
+                    let total_pages = app.total_pages();
+                    if total_pages > 1 {
+                        format!(" - {} ({}/{})", m, app.envelope_page + 1, total_pages)
+                    } else {
+                        format!(" - {}", m)
+                    }
+                })
                 .unwrap_or_default()
         ))
         .borders(Borders::ALL)

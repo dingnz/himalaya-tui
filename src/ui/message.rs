@@ -11,7 +11,10 @@ use crate::app::{App, Panel};
 use super::get_border_style;
 
 pub fn render_message(frame: &mut Frame, app: &App, area: Rect) {
-    let content = app.message_content.as_deref().unwrap_or("No message loaded");
+    let content = app
+        .message_content
+        .as_deref()
+        .unwrap_or("No message loaded");
 
     let lines: Vec<Line> = content.lines().map(Line::from).collect();
     let total_lines = lines.len() as u16;

@@ -1,11 +1,80 @@
-use std::{collections::HashSet, path::PathBuf};
+use std::collections::HashSet;
 
-use anyhow::{bail, Result};
 use edtui::{EditorMode, EditorState, Lines};
 use mml::template::{self, TemplateCursor};
-use pimalaya_toolbox::config::TomlConfig;
 
-use crate::config::{Config, ImapConfig, SmtpConfig};
+use crate::config::SmtpConfig;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AppMode {
+    Wizard,
+    Normal,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WizardField {
+    Uri,
+    Username,
+    Password,
+}
+
+#[derive(Debug, Clone)]
+pub struct WizardState {
+    pub uri: String,
+    pub username: String,
+    pub password: String,
+    pub active_field: WizardField,
+    pub error: Option<String>,
+    pub connecting: bool,
+}
+
+impl Default for WizardState {
+    fn default() -> Self {
+        Self {
+            uri: String::new(),
+            username: String::new(),
+            password: String::new(),
+            active_field: WizardField::Uri,
+            error: None,
+            connecting: false,
+        }
+    }
+}
+
+impl WizardState {
+    pub fn push_char(&mut self, c: char) {
+        match self.active_field {
+            WizardField::Uri => self.uri.push(c),
+            WizardField::Username => self.username.push(c),
+            WizardField::Password => self.password.push(c),
+        }
+        self.error = None;
+    }
+
+    pub fn backspace(&mut self) {
+        match self.active_field {
+            WizardField::Uri => self.uri.pop(),
+            WizardField::Username => self.username.pop(),
+            WizardField::Password => self.password.pop(),
+        };
+    }
+
+    pub fn next_field(&mut self) {
+        self.active_field = match self.active_field {
+            WizardField::Uri => WizardField::Username,
+            WizardField::Username => WizardField::Password,
+            WizardField::Password => WizardField::Uri,
+        };
+    }
+
+    pub fn prev_field(&mut self) {
+        self.active_field = match self.active_field {
+            WizardField::Uri => WizardField::Password,
+            WizardField::Username => WizardField::Uri,
+            WizardField::Password => WizardField::Username,
+        };
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Panel {
@@ -31,10 +100,12 @@ pub enum EnvelopeAction {
     Copy,
     Move,
     Delete,
+    AddFlag,
+    RemoveFlag,
 }
 
 impl EnvelopeAction {
-    pub const ALL: [EnvelopeAction; 7] = [
+    pub const ALL: [EnvelopeAction; 9] = [
         EnvelopeAction::Read,
         EnvelopeAction::Reply,
         EnvelopeAction::ReplyAll,
@@ -42,6 +113,8 @@ impl EnvelopeAction {
         EnvelopeAction::Copy,
         EnvelopeAction::Move,
         EnvelopeAction::Delete,
+        EnvelopeAction::AddFlag,
+        EnvelopeAction::RemoveFlag,
     ];
 
     pub fn label(&self) -> &'static str {
@@ -53,6 +126,35 @@ impl EnvelopeAction {
             EnvelopeAction::Copy => "Copy",
             EnvelopeAction::Move => "Move",
             EnvelopeAction::Delete => "Mark for deletion",
+            EnvelopeAction::AddFlag => "Add flag",
+            EnvelopeAction::RemoveFlag => "Remove flag",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FlagAction {
+    Seen,
+    Flagged,
+    Answered,
+}
+
+impl FlagAction {
+    pub const ALL: [FlagAction; 3] = [FlagAction::Seen, FlagAction::Flagged, FlagAction::Answered];
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            FlagAction::Seen => "\\Seen",
+            FlagAction::Flagged => "\\Flagged",
+            FlagAction::Answered => "\\Answered",
+        }
+    }
+
+    pub fn jmap_keyword(&self) -> &'static str {
+        match self {
+            FlagAction::Seen => "$seen",
+            FlagAction::Flagged => "$flagged",
+            FlagAction::Answered => "$answered",
         }
     }
 }
@@ -90,10 +192,13 @@ pub enum Dialog {
     CopyTo,
     MoveTo,
     Delete,
+    FlagAdd,
+    FlagRemove,
 }
 
 #[derive(Debug, Clone)]
 pub struct Mailbox {
+    pub id: Option<String>,
     pub name: String,
     pub delimiter: Option<char>,
     pub subscribed: bool,
@@ -101,7 +206,7 @@ pub struct Mailbox {
 
 #[derive(Debug, Clone)]
 pub struct Envelope {
-    pub uid: u32,
+    pub id: String,
     pub date: String,
     pub from: String,
     pub subject: String,
@@ -110,69 +215,55 @@ pub struct Envelope {
 
 pub struct App {
     pub running: bool,
+    pub mode: AppMode,
+    pub wizard: Option<WizardState>,
     pub active_panel: Panel,
     pub mailboxes: Vec<Mailbox>,
     pub mailbox_index: usize,
     pub envelopes: Vec<Envelope>,
     pub envelope_index: usize,
+    pub envelope_page: usize,
+    pub envelope_page_size: usize,
+    pub envelope_total: u32,
     pub selected_mailbox: Option<String>,
+    pub selected_mailbox_id: Option<String>,
     pub account_name: String,
     pub email: String,
     pub display_name: String,
     pub signature: String,
-    pub imap_config: ImapConfig,
     pub smtp_config: Option<SmtpConfig>,
     pub status_message: Option<String>,
-
-    // Message viewing
     pub bottom_panel_mode: BottomPanelMode,
     pub message_content: Option<String>,
     pub message_scroll: u16,
     pub previewing_compose: bool,
-
-    // Message composition
     pub editor_state: EditorState,
-
-    // Dialog
     pub dialog: Option<Dialog>,
     pub dialog_index: usize,
 }
 
-impl App {
-    pub fn new(config_paths: &[PathBuf], account_name: Option<&str>) -> Result<Self> {
-        let config = Config::from_paths_or_default(config_paths)?;
-        let (name, account_config) = config.get_account(account_name)?;
-        let Some(imap_config) = account_config.imap else {
-            bail!("IMAP config is missing for this account")
-        };
-
-        let email = account_config.email.clone();
-        let display_name = account_config
-            .display_name
-            .or(config.display_name)
-            .unwrap_or_default();
-        let signature = account_config
-            .signature
-            .or(config.signature)
-            .unwrap_or_default();
-
-        let smtp_config = account_config.smtp;
-
-        Ok(Self {
+impl Default for App {
+    fn default() -> Self {
+        Self {
             running: true,
+            mode: AppMode::Normal,
+            wizard: None,
             active_panel: Panel::Mailboxes,
             mailboxes: Vec::new(),
             mailbox_index: 0,
             envelopes: Vec::new(),
             envelope_index: 0,
+            envelope_page: 0,
+            envelope_page_size: 50,
+            envelope_total: 0,
             selected_mailbox: None,
-            account_name: name,
-            email,
-            display_name,
-            signature,
-            imap_config,
-            smtp_config,
-            status_message: Some("Loading mailboxes...".to_string()),
+            selected_mailbox_id: None,
+            account_name: String::new(),
+            email: String::new(),
+            display_name: String::new(),
+            signature: String::new(),
+            smtp_config: None,
+            status_message: None,
             bottom_panel_mode: BottomPanelMode::None,
             message_content: None,
             message_scroll: 0,
@@ -180,14 +271,48 @@ impl App {
             editor_state: EditorState::new(Lines::from("")),
             dialog: None,
             dialog_index: 0,
-        })
+        }
+    }
+}
+
+impl App {
+    pub fn new(
+        account_name: String,
+        email: String,
+        display_name: String,
+        signature: String,
+        smtp_config: Option<SmtpConfig>,
+    ) -> Self {
+        Self {
+            account_name,
+            email,
+            display_name,
+            signature,
+            smtp_config,
+            status_message: Some("Loading mailboxes...".into()),
+            ..Self::default()
+        }
+    }
+
+    pub fn new_wizard() -> Self {
+        Self {
+            mode: AppMode::Wizard,
+            wizard: Some(WizardState::default()),
+            ..Self::default()
+        }
+    }
+
+    pub fn complete_wizard(&mut self, account_name: String, email: String) {
+        self.account_name = account_name;
+        self.email = email;
+        self.wizard = None;
+        self.mode = AppMode::Normal;
     }
 
     pub fn quit(&mut self) {
         self.running = false;
     }
 
-    /// Close the current "frame" - returns true if something was closed
     pub fn close_current(&mut self) -> bool {
         match self.active_panel {
             Panel::Message | Panel::Compose => {
@@ -208,8 +333,11 @@ impl App {
 
     pub fn unselect_mailbox(&mut self) {
         self.selected_mailbox = None;
+        self.selected_mailbox_id = None;
         self.envelopes.clear();
         self.envelope_index = 0;
+        self.envelope_page = 0;
+        self.envelope_total = 0;
         self.close_bottom_panel();
         self.active_panel = Panel::Mailboxes;
     }
@@ -276,18 +404,18 @@ impl App {
     }
 
     pub fn select_mailbox(&mut self) {
-        let mailbox_name = self
-            .mailboxes
-            .get(self.mailbox_index)
-            .map(|m| m.name.clone());
+        let mailbox = self.mailboxes.get(self.mailbox_index).cloned();
 
-        if let Some(name) = mailbox_name {
-            self.selected_mailbox = Some(name.clone());
+        if let Some(m) = mailbox {
+            self.selected_mailbox = Some(m.name.clone());
+            self.selected_mailbox_id = m.id.clone();
             self.envelope_index = 0;
+            self.envelope_page = 0;
+            self.envelope_total = 0;
             self.envelopes.clear();
             self.close_bottom_panel();
             self.active_panel = Panel::Envelopes;
-            self.status_message = Some(format!("Loading envelopes from {}...", name));
+            self.status_message = Some(format!("Loading envelopes from {}...", m.name));
         }
     }
 
@@ -300,10 +428,37 @@ impl App {
         self.status_message = None;
     }
 
-    pub fn set_envelopes(&mut self, envelopes: Vec<Envelope>) {
+    pub fn set_envelopes(&mut self, envelopes: Vec<Envelope>, total: u32) {
         self.envelopes = envelopes;
         self.envelope_index = 0;
+        self.envelope_total = total;
         self.status_message = None;
+    }
+
+    pub fn total_pages(&self) -> usize {
+        if self.envelope_page_size == 0 || self.envelope_total == 0 {
+            1
+        } else {
+            ((self.envelope_total as usize) + self.envelope_page_size - 1) / self.envelope_page_size
+        }
+    }
+
+    pub fn next_envelope_page(&mut self) -> bool {
+        if self.envelope_page + 1 < self.total_pages() {
+            self.envelope_page += 1;
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn prev_envelope_page(&mut self) -> bool {
+        if self.envelope_page > 0 {
+            self.envelope_page -= 1;
+            true
+        } else {
+            false
+        }
     }
 
     pub fn set_status(&mut self, message: impl Into<String>) {
@@ -444,7 +599,11 @@ impl App {
         }
     }
 
-    // Dialog
+    pub fn unflag_selected_envelope(&mut self, flag: &str) {
+        if let Some(envelope) = self.envelopes.get_mut(self.envelope_index) {
+            envelope.flags.remove(flag);
+        }
+    }
 
     pub fn open_dialog(&mut self, dialog: Dialog) {
         self.dialog = Some(dialog);
@@ -461,6 +620,7 @@ impl App {
             Some(Dialog::Compose) => ComposeAction::ALL.len(),
             Some(Dialog::CopyTo) | Some(Dialog::MoveTo) => self.mailboxes.len(),
             Some(Dialog::Delete) => 2,
+            Some(Dialog::FlagAdd) | Some(Dialog::FlagRemove) => FlagAction::ALL.len(),
             None => 0,
         }
     }
@@ -485,5 +645,9 @@ impl App {
 
     pub fn get_selected_compose_action(&self) -> ComposeAction {
         ComposeAction::ALL[self.dialog_index]
+    }
+
+    pub fn get_selected_flag_action(&self) -> FlagAction {
+        FlagAction::ALL[self.dialog_index]
     }
 }

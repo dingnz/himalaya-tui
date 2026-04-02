@@ -2,6 +2,7 @@ mod compose;
 mod envelopes;
 mod mailboxes;
 mod message;
+mod wizard;
 
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -11,14 +12,21 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, BottomPanelMode, ComposeAction, Dialog, EnvelopeAction, Panel};
+use crate::app::{
+    App, AppMode, BottomPanelMode, ComposeAction, Dialog, EnvelopeAction, FlagAction, Panel,
+};
 
 pub use compose::render_compose;
 pub use envelopes::render_envelopes;
 pub use mailboxes::render_mailboxes;
 pub use message::render_message;
+pub use wizard::render_wizard;
 
 pub fn render(frame: &mut Frame, app: &mut App) {
+    if app.mode == AppMode::Wizard {
+        render_wizard(frame, app);
+        return;
+    }
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -57,6 +65,18 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         Some(Dialog::Delete) => {
             render_dialog(frame, app.dialog_index, " Delete? ", &["Yes", "No"]);
         }
+        Some(Dialog::FlagAdd) => render_dialog(
+            frame,
+            app.dialog_index,
+            " Add Flag ",
+            &FlagAction::ALL.map(|a| a.label()),
+        ),
+        Some(Dialog::FlagRemove) => render_dialog(
+            frame,
+            app.dialog_index,
+            " Remove Flag ",
+            &FlagAction::ALL.map(|a| a.label()),
+        ),
         None => {}
     }
 }

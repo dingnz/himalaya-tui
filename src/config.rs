@@ -1,9 +1,13 @@
-use std::{collections::HashMap, fmt, path::PathBuf, process::Command};
+use std::{collections::HashMap, path::PathBuf};
 
-use anyhow::{bail, Result};
-use pimalaya_toolbox::config::TomlConfig;
-use secrecy::SecretString;
-use serde::{de::Visitor, Deserialize, Deserializer};
+use anyhow::Result;
+use pimalaya_toolbox::{
+    config::{shell_expanded_string, TomlConfig},
+    sasl::{sasl_default_mechanisms, Sasl, SaslAnonymous, SaslLogin, SaslMechanism, SaslPlain},
+    secret::{Secret, SecretError},
+    stream::{Rustls, RustlsCrypto, Tls, TlsProvider},
+};
+use serde::Deserialize;
 use url::Url;
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -45,6 +49,8 @@ pub struct AccountConfig {
     pub default: bool,
     pub imap: Option<ImapConfig>,
     pub smtp: Option<SmtpConfig>,
+    #[cfg(feature = "jmap")]
+    pub jmap: Option<JmapConfig>,
     #[serde(deserialize_with = "shell_expanded_string")]
     pub email: String,
     pub display_name: Option<String>,
@@ -57,43 +63,85 @@ pub struct AccountConfig {
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct SmtpConfig {
     pub url: Url,
-
     #[serde(default)]
     pub tls: TlsConfig,
     #[serde(default)]
     pub starttls: bool,
     #[serde(default)]
     pub sasl: SaslConfig,
+}
+
+#[cfg(feature = "smtp")]
+impl SmtpConfig {
+    pub fn into_session(self) -> Result<pimalaya_toolbox::stream::smtp::SmtpSession> {
+        Ok(pimalaya_toolbox::stream::smtp::SmtpSession::new(
+            self.url,
+            self.tls.try_into()?,
+            self.starttls,
+            self.sasl.try_into()?,
+        )?)
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct ImapConfig {
     pub url: Url,
-
     #[serde(default)]
     pub tls: TlsConfig,
     #[serde(default)]
     pub starttls: bool,
     #[serde(default)]
     pub sasl: SaslConfig,
-
-    #[serde(default)]
-    pub extensions: ImapExtensionsConfig,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct ImapExtensionsConfig {
-    #[serde(default)]
-    id: ImapIdExtensionConfig,
+#[cfg(feature = "imap")]
+impl ImapConfig {
+    pub fn into_session(self) -> Result<pimalaya_toolbox::stream::imap::ImapSession> {
+        Ok(pimalaya_toolbox::stream::imap::ImapSession::new(
+            self.url,
+            self.tls.try_into()?,
+            self.starttls,
+            self.sasl.try_into()?,
+        )?)
+    }
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize)]
+#[cfg(feature = "jmap")]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub struct ImapIdExtensionConfig {
+pub struct JmapConfig {
+    pub server: String,
     #[serde(default)]
-    always_after_auth: bool,
+    pub tls: TlsConfig,
+    pub auth: JmapAuthConfig,
+}
+
+#[cfg(feature = "jmap")]
+impl JmapConfig {
+    pub fn into_session(self) -> Result<pimalaya_toolbox::stream::jmap::JmapSession> {
+        use pimalaya_toolbox::stream::jmap::{JmapAuth, JmapSession};
+
+        let auth = match self.auth {
+            JmapAuthConfig::Bearer { token } => JmapAuth::Bearer(token.get()?.into()),
+            JmapAuthConfig::Basic { username, password } => JmapAuth::Basic {
+                username,
+                password: password.get()?.into(),
+            },
+            JmapAuthConfig::Header { value } => JmapAuth::Header(value.get()?.into()),
+        };
+
+        Ok(JmapSession::new(self.server, self.tls.try_into()?, auth)?)
+    }
+}
+
+#[cfg(feature = "jmap")]
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub enum JmapAuthConfig {
+    Bearer { token: Secret },
+    Basic { username: String, password: Secret },
+    Header { value: Secret },
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -125,18 +173,33 @@ pub enum RustlsCryptoConfig {
     Ring,
 }
 
+impl TryFrom<TlsConfig> for Tls {
+    type Error = SecretError;
+
+    fn try_from(config: TlsConfig) -> Result<Self, Self::Error> {
+        Ok(Tls {
+            provider: config.provider.map(|config| match config {
+                TlsProviderConfig::Rustls => TlsProvider::Rustls,
+                TlsProviderConfig::NativeTls => TlsProvider::NativeTls,
+            }),
+            rustls: Rustls {
+                crypto: config.rustls.crypto.map(|config| match config {
+                    RustlsCryptoConfig::Aws => RustlsCrypto::Aws,
+                    RustlsCryptoConfig::Ring => RustlsCrypto::Ring,
+                }),
+            },
+            cert: config.cert,
+        })
+    }
+}
+
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct SaslConfig {
-    #[serde(default = "default_sasl_mechanisms")]
-    pub mechanisms: Vec<SaslMechanismConfig>,
+    pub mechanisms: Option<Vec<SaslMechanismConfig>>,
     pub login: Option<SaslLoginConfig>,
     pub plain: Option<SaslPlainConfig>,
     pub anonymous: Option<SaslAnonymousConfig>,
-}
-
-fn default_sasl_mechanisms() -> Vec<SaslMechanismConfig> {
-    vec![SaslMechanismConfig::Plain, SaslMechanismConfig::Login]
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -149,55 +212,19 @@ pub enum SaslMechanismConfig {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
-pub enum SecretConfig {
-    Raw(SecretString),
-    Command(Vec<String>),
-}
-
-impl SecretConfig {
-    pub fn get(&self) -> Result<SecretString> {
-        match self {
-            Self::Raw(secret) => Ok(secret.clone()),
-            Self::Command(args) => {
-                let Some((program, args)) = args.split_first() else {
-                    bail!("Secret command cannot be empty")
-                };
-
-                let mut cmd = Command::new(program);
-                cmd.args(args);
-                let out = cmd.output()?;
-
-                if !out.status.success() {
-                    let err = String::from_utf8_lossy(&out.stderr);
-                    bail!("Cannot read secret from command: {err}");
-                }
-
-                let secret = String::from_utf8_lossy(&out.stdout);
-                let secret = secret.trim_matches(['\r', '\n']);
-                let secret = match secret.split_once('\n') {
-                    Some((secret, _)) => secret.trim_matches(['\r', '\n']),
-                    None => secret,
-                };
-
-                Ok(SecretString::from(secret))
-            }
-        }
-    }
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct SaslLoginConfig {
+    #[serde(deserialize_with = "shell_expanded_string")]
     pub username: String,
-    pub password: SecretConfig,
+    pub password: Secret,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct SaslPlainConfig {
     pub authzid: Option<String>,
+    #[serde(deserialize_with = "shell_expanded_string")]
     pub authcid: String,
-    pub passwd: SecretConfig,
+    pub passwd: Secret,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -206,25 +233,43 @@ pub struct SaslAnonymousConfig {
     pub message: Option<String>,
 }
 
-struct ShellExpandedStringVisitor;
+impl TryFrom<SaslConfig> for Sasl {
+    type Error = SecretError;
 
-impl<'de> Visitor<'de> for ShellExpandedStringVisitor {
-    type Value = String;
-
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.write_str("an string containing environment variable(s)")
+    fn try_from(config: SaslConfig) -> Result<Self, Self::Error> {
+        Ok(Sasl {
+            mechanisms: match config.mechanisms {
+                None => sasl_default_mechanisms(),
+                Some(config) => config
+                    .into_iter()
+                    .map(|m| match m {
+                        SaslMechanismConfig::Anonymous => SaslMechanism::Anonymous,
+                        SaslMechanismConfig::Plain => SaslMechanism::Plain,
+                        SaslMechanismConfig::Login => SaslMechanism::Login,
+                    })
+                    .collect(),
+            },
+            anonymous: match config.anonymous {
+                None => None,
+                Some(config) => Some(SaslAnonymous {
+                    message: config.message,
+                }),
+            },
+            plain: match config.plain {
+                None => None,
+                Some(config) => Some(SaslPlain {
+                    authzid: config.authzid,
+                    authcid: config.authcid,
+                    passwd: config.passwd.get()?,
+                }),
+            },
+            login: match config.login {
+                None => None,
+                Some(config) => Some(SaslLogin {
+                    username: config.username,
+                    password: config.password.get()?,
+                }),
+            },
+        })
     }
-
-    fn visit_string<E: serde::de::Error>(self, v: String) -> Result<Self::Value, E> {
-        match shellexpand::full(&v) {
-            Ok(v) => Ok(v.to_string()),
-            Err(_) => Ok(v),
-        }
-    }
-}
-
-pub fn shell_expanded_string<'de, D: Deserializer<'de>>(
-    deserializer: D,
-) -> Result<String, D::Error> {
-    deserializer.deserialize_string(ShellExpandedStringVisitor)
 }

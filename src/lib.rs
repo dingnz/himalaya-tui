@@ -2,8 +2,8 @@ pub mod app;
 pub mod config;
 #[cfg(feature = "imap")]
 pub mod imap;
-pub mod sasl;
+#[cfg(feature = "jmap")]
+pub mod jmap;
 #[cfg(feature = "smtp")]
 pub mod smtp;
-pub mod tls;
 pub mod ui;

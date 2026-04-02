@@ -6,8 +6,8 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, Panel};
 use super::get_border_style;
+use crate::app::{App, Panel};
 
 pub fn render_mailboxes(frame: &mut Frame, app: &App, area: Rect) {
     let items: Vec<ListItem> = app

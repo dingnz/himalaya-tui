@@ -1,126 +1,45 @@
-mod stream;
+pub mod envelope;
+pub mod flag;
+pub mod mailbox;
+pub mod message;
 
-use std::{collections::HashSet, num::NonZeroU32};
+pub use envelope::list::ImapEnvelopeListHandler;
+pub use flag::add::ImapFlagAddHandler;
+pub use flag::remove::ImapFlagRemoveHandler;
+pub use mailbox::list::ImapMailboxListHandler;
+pub use message::copy::ImapMessageCopyHandler;
+pub use message::delete::ImapMessageDeleteHandler;
+pub use message::get::ImapMessageGetHandler;
+pub use message::get_raw::ImapMessageGetRawHandler;
+pub use message::r#move::ImapMessageMoveHandler;
+pub use message::save::ImapMessageSaveHandler;
 
-use anyhow::{bail, Result};
-use io_imap::{
-    coroutines::{append::*, copy::*, fetch::*, lsub::*, r#move::*, select::*, store::*},
-    types::{
-        core::{Literal, Vec1},
-        extensions::binary::LiteralOrLiteral8,
-        fetch::{MacroOrMessageDataItemNames, MessageDataItem, MessageDataItemName},
-        flag::{Flag, StoreType},
-        sequence::SequenceSet,
-    },
+use std::collections::HashSet;
+
+use io_imap::types::{
+    envelope::Address,
+    fetch::{MessageDataItem, MessageDataItemName},
+    flag::FlagFetch,
 };
-use io_stream::runtimes::std::handle;
 use log::debug;
-use mail_parser::MessageParser;
 use rfc2047_decoder::{Decoder, RecoverStrategy};
 
-use crate::app::{Envelope, Mailbox};
-use crate::config::ImapConfig;
+use crate::app::Envelope;
 
-pub use stream::{connect, Stream};
-
-pub fn fetch_mailboxes(config: &ImapConfig) -> Result<Vec<Mailbox>> {
-    let (context, mut stream) = connect(config.clone())?;
-
-    let reference = "".try_into()?;
-    let pattern = "*".try_into()?;
-
-    let mut arg = None;
-    let mut coroutine = ImapLsub::new(context, reference, pattern);
-
-    let mailboxes = loop {
-        match coroutine.resume(arg.take()) {
-            ImapLsubResult::Io { io } => arg = Some(handle(&mut stream, io)?),
-            ImapLsubResult::Ok { mailboxes, .. } => break mailboxes,
-            ImapLsubResult::Err { err, .. } => bail!(err),
-        }
-    };
-
-    let result = mailboxes
-        .into_iter()
-        .map(|(mbox, delim, _attrs)| {
-            let name = match mbox {
-                io_imap::types::mailbox::Mailbox::Inbox => "INBOX".to_string(),
-                io_imap::types::mailbox::Mailbox::Other(mbox) => {
-                    String::from_utf8_lossy(mbox.inner().as_ref()).to_string()
-                }
-            };
-            let delimiter = delim.map(|d| d.inner());
-
-            Mailbox {
-                name,
-                delimiter,
-                subscribed: true,
-            }
-        })
-        .collect();
-
-    Ok(result)
-}
-
-pub fn fetch_envelopes(config: &ImapConfig, mailbox: &str) -> Result<Vec<Envelope>> {
-    let (context, mut stream) = connect(config.clone())?;
-
-    let mailbox_owned = mailbox.to_string();
-    let mailbox_name = mailbox_owned.try_into()?;
-
-    // SELECT mailbox
-    let mut arg = None;
-    let mut coroutine = ImapSelect::new(context, mailbox_name);
-
-    let context = loop {
-        match coroutine.resume(arg.take()) {
-            ImapSelectResult::Io { io } => arg = Some(handle(&mut stream, io)?),
-            ImapSelectResult::Ok { context, .. } => break context,
-            ImapSelectResult::Err { err, .. } => bail!(err),
-        }
-    };
-
-    // Parse sequence set for all messages
-    let sequence_set: SequenceSet = "1:*".parse()?;
-
-    // FETCH envelopes and flags
-    let item_names = MacroOrMessageDataItemNames::MessageDataItemNames(vec![
-        MessageDataItemName::Envelope,
-        MessageDataItemName::Flags,
-    ]);
-
-    let mut arg = None;
-    let mut coroutine = ImapFetch::new(context, sequence_set, item_names, true);
-
-    let data = loop {
-        match coroutine.resume(arg.take()) {
-            ImapFetchResult::Io { io } => arg = Some(handle(&mut stream, io)?),
-            ImapFetchResult::Ok { data, .. } => break data,
-            ImapFetchResult::Err { err, .. } => bail!(err),
-        }
-    };
-
-    let mut envelopes: Vec<Envelope> = data
-        .into_iter()
-        .map(|(seq, items)| parse_envelope(seq, items))
-        .collect();
-
-    envelopes.sort_by(|a, b| b.uid.cmp(&a.uid));
-
-    Ok(envelopes)
-}
-
-fn parse_envelope(seq: NonZeroU32, items: Vec1<MessageDataItem<'static>>) -> Envelope {
-    let mut uid = seq.get();
+pub(crate) fn parse_envelope(
+    uid: u32,
+    items: impl IntoIterator<Item = MessageDataItem<'static>>,
+) -> Envelope {
+    let mut envelope_uid = uid;
     let mut date = String::new();
     let mut from = String::new();
     let mut subject = String::new();
     let mut flags = HashSet::new();
 
-    for item in items.into_iter() {
+    for item in items {
         match item {
             MessageDataItem::Uid(u) => {
-                uid = u.get();
+                envelope_uid = u.get();
             }
             MessageDataItem::Envelope(env) => {
                 if let Some(d) = &env.date.0 {
@@ -139,7 +58,7 @@ fn parse_envelope(seq: NonZeroU32, items: Vec1<MessageDataItem<'static>>) -> Env
     }
 
     Envelope {
-        uid,
+        id: envelope_uid.to_string(),
         date,
         from,
         subject,
@@ -147,7 +66,7 @@ fn parse_envelope(seq: NonZeroU32, items: Vec1<MessageDataItem<'static>>) -> Env
     }
 }
 
-fn format_flag(flag: io_imap::types::flag::FlagFetch<'_>) -> String {
+pub(crate) fn format_flag(flag: FlagFetch<'_>) -> String {
     use io_imap::types::flag::{Flag, FlagFetch};
 
     match flag {
@@ -164,7 +83,7 @@ fn format_flag(flag: io_imap::types::flag::FlagFetch<'_>) -> String {
     }
 }
 
-fn decode_mime(s: &str) -> String {
+pub(crate) fn decode_mime(s: &str) -> String {
     let decoder = Decoder::new().too_long_encoded_word_strategy(RecoverStrategy::Decode);
     match decoder.decode(s.as_bytes()) {
         Ok(decoded) => decoded,
@@ -175,9 +94,7 @@ fn decode_mime(s: &str) -> String {
     }
 }
 
-fn parse_date(date_str: &str) -> String {
-    // Simple date parsing - just extract day/month
-    // Full format is typically: "Mon, 6 Jan 2025 10:30:00 +0000"
+pub(crate) fn parse_date(date_str: &str) -> String {
     let parts: Vec<&str> = date_str.split_whitespace().collect();
     if parts.len() >= 4 {
         format!("{} {}", parts[1], parts[2])
@@ -186,18 +103,16 @@ fn parse_date(date_str: &str) -> String {
     }
 }
 
-fn format_addresses_short(addrs: &[io_imap::types::envelope::Address<'_>]) -> String {
+pub(crate) fn format_addresses_short(addrs: &[Address<'_>]) -> String {
     addrs
         .iter()
         .map(|addr| {
-            // If name exists, show decoded name only
             if let Some(n) = &addr.name.0 {
                 let name = decode_mime(&String::from_utf8_lossy(n.as_ref()));
                 if !name.is_empty() {
                     return name;
                 }
             }
-            // Otherwise show email
             let mailbox = addr
                 .mailbox
                 .0
@@ -221,264 +136,10 @@ fn format_addresses_short(addrs: &[io_imap::types::envelope::Address<'_>]) -> St
         .join(", ")
 }
 
-pub fn fetch_raw_message(config: &ImapConfig, mailbox: &str, uid: u32) -> Result<Vec<u8>> {
-    let (context, mut stream) = connect(config.clone())?;
-
-    let mailbox_owned = mailbox.to_string();
-    let mailbox_name = mailbox_owned.try_into()?;
-
-    let mut arg = None;
-    let mut coroutine = ImapSelect::new(context, mailbox_name);
-
-    let context = loop {
-        match coroutine.resume(arg.take()) {
-            ImapSelectResult::Io { io } => arg = Some(handle(&mut stream, io)?),
-            ImapSelectResult::Ok { context, .. } => break context,
-            ImapSelectResult::Err { err, .. } => bail!(err),
-        }
-    };
-
-    let id = NonZeroU32::new(uid).ok_or_else(|| anyhow::anyhow!("UID must be non-zero"))?;
-
-    let item_names =
-        MacroOrMessageDataItemNames::MessageDataItemNames(vec![MessageDataItemName::BodyExt {
-            section: None,
-            partial: None,
-            peek: true,
-        }]);
-
-    let mut arg = None;
-    let mut coroutine = ImapFetchFirst::new(context, id, item_names, true);
-
-    let items = loop {
-        match coroutine.resume(arg.take()) {
-            ImapFetchFirstResult::Io { io } => arg = Some(handle(&mut stream, io)?),
-            ImapFetchFirstResult::Ok { items, .. } => break items,
-            ImapFetchFirstResult::Err { err, .. } => bail!(err),
-        }
-    };
-
-    let mut raw_message: Option<Vec<u8>> = None;
-    for item in items.into_iter() {
-        if let MessageDataItem::BodyExt { data, .. } = item {
-            if let Some(data) = data.0 {
-                raw_message = Some(data.as_ref().to_vec());
-            }
-        }
-    }
-
-    raw_message.ok_or_else(|| anyhow::anyhow!("No message data returned"))
-}
-
-pub fn fetch_message(config: &ImapConfig, mailbox: &str, uid: u32) -> Result<String> {
-    let (context, mut stream) = connect(config.clone())?;
-
-    let mailbox_owned = mailbox.to_string();
-    let mailbox_name = mailbox_owned.try_into()?;
-
-    // SELECT mailbox
-    let mut arg = None;
-    let mut coroutine = ImapSelect::new(context, mailbox_name);
-
-    let context = loop {
-        match coroutine.resume(arg.take()) {
-            ImapSelectResult::Io { io } => arg = Some(handle(&mut stream, io)?),
-            ImapSelectResult::Ok { context, .. } => break context,
-            ImapSelectResult::Err { err, .. } => bail!(err),
-        }
-    };
-
-    // FETCH with BODY.PEEK[] to avoid marking as read
-    let id = NonZeroU32::new(uid).ok_or_else(|| anyhow::anyhow!("UID must be non-zero"))?;
-
-    let item_names =
-        MacroOrMessageDataItemNames::MessageDataItemNames(vec![MessageDataItemName::BodyExt {
-            section: None,
-            partial: None,
-            peek: true,
-        }]);
-
-    let mut arg = None;
-    let mut coroutine = ImapFetchFirst::new(context, id, item_names, true);
-
-    let items = loop {
-        match coroutine.resume(arg.take()) {
-            ImapFetchFirstResult::Io { io } => arg = Some(handle(&mut stream, io)?),
-            ImapFetchFirstResult::Ok { items, .. } => break items,
-            ImapFetchFirstResult::Err { err, .. } => bail!(err),
-        }
-    };
-
-    // Extract raw message bytes
-    let mut raw_message: Option<Vec<u8>> = None;
-    for item in items.into_iter() {
-        if let MessageDataItem::BodyExt { data, .. } = item {
-            if let Some(data) = data.0 {
-                raw_message = Some(data.as_ref().to_vec());
-            }
-        }
-    }
-
-    let raw = raw_message.ok_or_else(|| anyhow::anyhow!("No message data returned"))?;
-
-    // Parse message using mail-parser and get text content
-    let message = MessageParser::default()
-        .parse(&raw)
-        .ok_or_else(|| anyhow::anyhow!("Failed to parse message"))?;
-
-    // Get plain text, or convert HTML to text
-    let content = if let Some(text) = message.body_text(0) {
-        text.to_string()
-    } else if let Some(html) = message.body_html(0) {
-        html2text::from_read(html.as_bytes(), 80)
-    } else {
-        // Fallback to raw message as string
-        String::from_utf8_lossy(&raw).to_string()
-    };
-
-    Ok(content)
-}
-
-pub fn save_to_drafts(config: &ImapConfig, content: &str) -> Result<()> {
-    let (context, mut stream) = connect(config.clone())?;
-
-    // Build a minimal RFC 5322 message
-    let message_content = format!(
-        "From: \r\nTo: \r\nSubject: Draft\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n{}",
-        content
-    );
-
-    let mailbox: io_imap::types::mailbox::Mailbox<'static> = "Drafts".try_into()?;
-    let literal = Literal::try_from(message_content.into_bytes())?;
-    let message = LiteralOrLiteral8::Literal(literal);
-
-    // Add Draft flag
-    let flags = vec![Flag::Draft];
-
-    // APPEND
-    let mut arg = None;
-    let mut coroutine = ImapAppend::new(context, mailbox, flags, None, message);
-
-    loop {
-        match coroutine.resume(arg.take()) {
-            ImapAppendResult::Io { io } => arg = Some(handle(&mut stream, io)?),
-            ImapAppendResult::Ok { .. } => break,
-            ImapAppendResult::Err { err, .. } => bail!(err),
-        }
-    }
-
-    Ok(())
-}
-
-pub fn copy_message(config: &ImapConfig, mailbox: &str, uid: u32, target: &str) -> Result<()> {
-    let (context, mut stream) = connect(config.clone())?;
-
-    let mailbox_owned = mailbox.to_string();
-    let mailbox_name = mailbox_owned.try_into()?;
-
-    let mut arg = None;
-    let mut coroutine = ImapSelect::new(context, mailbox_name);
-
-    let context = loop {
-        match coroutine.resume(arg.take()) {
-            ImapSelectResult::Io { io } => arg = Some(handle(&mut stream, io)?),
-            ImapSelectResult::Ok { context, .. } => break context,
-            ImapSelectResult::Err { err, .. } => bail!(err),
-        }
-    };
-
-    let id = NonZeroU32::new(uid).ok_or_else(|| anyhow::anyhow!("UID must be non-zero"))?;
-    let sequence_set: SequenceSet = id.try_into()?;
-    let target_mailbox: io_imap::types::mailbox::Mailbox<'static> =
-        target.to_string().try_into()?;
-
-    let mut arg = None;
-    let mut coroutine = ImapCopy::new(context, sequence_set, target_mailbox, true);
-
-    loop {
-        match coroutine.resume(arg.take()) {
-            ImapCopyResult::Io { io } => arg = Some(handle(&mut stream, io)?),
-            ImapCopyResult::Ok { .. } => break,
-            ImapCopyResult::Err { err, .. } => bail!(err),
-        }
-    }
-
-    Ok(())
-}
-
-pub fn move_message(config: &ImapConfig, mailbox: &str, uid: u32, target: &str) -> Result<()> {
-    let (context, mut stream) = connect(config.clone())?;
-
-    let mailbox_owned = mailbox.to_string();
-    let mailbox_name = mailbox_owned.try_into()?;
-
-    let mut arg = None;
-    let mut coroutine = ImapSelect::new(context, mailbox_name);
-
-    let context = loop {
-        match coroutine.resume(arg.take()) {
-            ImapSelectResult::Io { io } => arg = Some(handle(&mut stream, io)?),
-            ImapSelectResult::Ok { context, .. } => break context,
-            ImapSelectResult::Err { err, .. } => bail!(err),
-        }
-    };
-
-    let id = NonZeroU32::new(uid).ok_or_else(|| anyhow::anyhow!("UID must be non-zero"))?;
-    let sequence_set: SequenceSet = id.try_into()?;
-    let target_mailbox: io_imap::types::mailbox::Mailbox<'static> =
-        target.to_string().try_into()?;
-
-    let mut arg = None;
-    let mut coroutine = ImapMove::new(context, sequence_set, target_mailbox, true);
-
-    loop {
-        match coroutine.resume(arg.take()) {
-            ImapMoveResult::Io { io } => arg = Some(handle(&mut stream, io)?),
-            ImapMoveResult::Ok { .. } => break,
-            ImapMoveResult::Err { err, .. } => bail!(err),
-        }
-    }
-
-    Ok(())
-}
-
-pub fn delete_message(config: &ImapConfig, mailbox: &str, uid: u32) -> Result<()> {
-    let (context, mut stream) = connect(config.clone())?;
-
-    let mailbox_owned = mailbox.to_string();
-    let mailbox_name = mailbox_owned.try_into()?;
-
-    let mut arg = None;
-    let mut coroutine = ImapSelect::new(context, mailbox_name);
-
-    let context = loop {
-        match coroutine.resume(arg.take()) {
-            ImapSelectResult::Io { io } => arg = Some(handle(&mut stream, io)?),
-            ImapSelectResult::Ok { context, .. } => break context,
-            ImapSelectResult::Err { err, .. } => bail!(err),
-        }
-    };
-
-    let id = NonZeroU32::new(uid).ok_or_else(|| anyhow::anyhow!("UID must be non-zero"))?;
-    let sequence_set: SequenceSet = id.try_into()?;
-
-    // Add \Deleted flag
-    let mut arg = None;
-    let mut coroutine = ImapStoreSilent::new(
-        context,
-        sequence_set,
-        StoreType::Add,
-        vec![Flag::Deleted],
-        true,
-    );
-
-    loop {
-        match coroutine.resume(arg.take()) {
-            ImapStoreSilentResult::Io { io } => arg = Some(handle(&mut stream, io)?),
-            ImapStoreSilentResult::Ok { .. } => break,
-            ImapStoreSilentResult::Err { err, .. } => bail!(err),
-        }
-    }
-
-    Ok(())
+pub(crate) fn fetch_item_names_body_peek() -> Vec<MessageDataItemName<'static>> {
+    vec![MessageDataItemName::BodyExt {
+        section: None,
+        partial: None,
+        peek: true,
+    }]
 }
