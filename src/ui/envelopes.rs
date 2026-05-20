@@ -1,5 +1,4 @@
-use std::collections::HashSet;
-
+use io_email::{envelope::Envelope, flag::Flag};
 use ratatui::{
     layout::{Constraint, Rect},
     style::{Color, Modifier, Style},
@@ -28,19 +27,17 @@ pub fn render_envelopes(frame: &mut Frame, app: &App, area: Rect) {
                     .bg(Color::Cyan)
                     .fg(Color::Black)
                     .add_modifier(Modifier::BOLD)
-            } else if envelope.flags.iter().any(|f| f == "\\Seen") {
+            } else if envelope.flags.contains(&Flag::Seen) {
                 Style::default().fg(Color::Gray)
             } else {
                 Style::default().add_modifier(Modifier::BOLD)
             };
 
-            let flags = format_flags(&envelope.flags);
-
             let cells = vec![
-                Cell::from(flags),
+                Cell::from(format_flags(envelope)),
                 Cell::from(envelope.subject.clone()),
-                Cell::from(truncate(&envelope.from, 20)),
-                Cell::from(truncate(&envelope.date, 6)),
+                Cell::from(truncate(&format_from(envelope), 20)),
+                Cell::from(truncate(&format_date(envelope), 6)),
             ];
 
             Row::new(cells).style(style)
@@ -50,8 +47,7 @@ pub fn render_envelopes(frame: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
         .title(format!(
             " Envelopes{} ",
-            app.selected_mailbox
-                .as_ref()
+            app.selected_mailbox_name()
                 .map(|m| {
                     let total_pages = app.total_pages();
                     if total_pages > 1 {
@@ -80,27 +76,44 @@ pub fn render_envelopes(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(table, area);
 }
 
-fn format_flags(flags: &HashSet<String>) -> String {
+fn format_flags(envelope: &Envelope) -> String {
     let mut s = String::new();
-
-    s.push(if flags.contains("\\Seen") { ' ' } else { '*' });
-    s.push(if flags.contains("\\Answered") {
+    s.push(if envelope.flags.contains(&Flag::Seen) {
+        ' '
+    } else {
+        '*'
+    });
+    s.push(if envelope.flags.contains(&Flag::Answered) {
         '↩'
     } else {
         ' '
     });
-    s.push(if flags.contains("\\Flagged") {
+    s.push(if envelope.flags.contains(&Flag::Flagged) {
         '!'
     } else {
         ' '
     });
-    s.push(if flags.contains("\\Deleted") {
-        '✗'
+    s.push(if envelope.flags.contains(&Flag::Draft) {
+        'D'
     } else {
         ' '
     });
-
     s
+}
+
+fn format_from(envelope: &Envelope) -> String {
+    envelope
+        .from
+        .first()
+        .map(|addr| addr.name.clone().unwrap_or_else(|| addr.email.clone()))
+        .unwrap_or_default()
+}
+
+fn format_date(envelope: &Envelope) -> String {
+    envelope
+        .date
+        .map(|d| d.format("%d %b").to_string())
+        .unwrap_or_default()
 }
 
 fn truncate(s: &str, max_len: usize) -> String {

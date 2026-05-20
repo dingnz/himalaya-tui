@@ -2,7 +2,6 @@ mod compose;
 mod envelopes;
 mod mailboxes;
 mod message;
-mod wizard;
 
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -12,21 +11,14 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{
-    App, AppMode, BottomPanelMode, ComposeAction, Dialog, EnvelopeAction, FlagAction, Panel,
-};
+use crate::app::{App, BottomPanelMode, ComposeAction, Dialog, EnvelopeAction, FlagAction, Panel};
 
 pub use compose::render_compose;
 pub use envelopes::render_envelopes;
 pub use mailboxes::render_mailboxes;
 pub use message::render_message;
-pub use wizard::render_wizard;
 
 pub fn render(frame: &mut Frame, app: &mut App) {
-    if app.mode == AppMode::Wizard {
-        render_wizard(frame, app);
-        return;
-    }
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -61,9 +53,6 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         Some(Dialog::MoveTo) => {
             let labels: Vec<&str> = app.mailboxes.iter().map(|m| m.name.as_str()).collect();
             render_dialog(frame, app.dialog_index, " Move to ", &labels);
-        }
-        Some(Dialog::Delete) => {
-            render_dialog(frame, app.dialog_index, " Delete? ", &["Yes", "No"]);
         }
         Some(Dialog::FlagAdd) => render_dialog(
             frame,
@@ -128,7 +117,7 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
     let status = if let Some(ref msg) = app.status_message {
         msg.clone()
     } else {
-        let mailbox = app.selected_mailbox.as_deref().unwrap_or("None");
+        let mailbox = app.selected_mailbox_name().unwrap_or("None");
         let mode_hint = match app.bottom_panel_mode {
             BottomPanelMode::None => "Enter: select",
             BottomPanelMode::Message => "Esc: close",

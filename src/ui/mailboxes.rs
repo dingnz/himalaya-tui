@@ -20,7 +20,7 @@ pub fn render_mailboxes(frame: &mut Frame, app: &App, area: Rect) {
                     .bg(Color::Cyan)
                     .fg(Color::Black)
                     .add_modifier(Modifier::BOLD)
-            } else if Some(&mailbox.name) == app.selected_mailbox.as_ref() {
+            } else if Some(&mailbox.id) == app.selected_mailbox.as_ref() {
                 Style::default()
                     .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD)
@@ -28,9 +28,7 @@ pub fn render_mailboxes(frame: &mut Frame, app: &App, area: Rect) {
                 Style::default()
             };
 
-            let prefix = if mailbox.subscribed { "* " } else { "  " };
-            let content = format!("{}{}", prefix, mailbox.name);
-            ListItem::new(Line::from(Span::styled(content, style)))
+            ListItem::new(Line::from(Span::styled(mailbox.name.clone(), style)))
         })
         .collect();
 

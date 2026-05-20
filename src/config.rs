@@ -1,6 +1,6 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::{collections::HashMap, fs, path::Path, path::PathBuf};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use pimalaya_config::{
     secret::{Secret, SecretError},
     toml::{shell_expanded_string, TomlConfig},
@@ -11,10 +11,11 @@ use pimalaya_stream::{
     },
     tls::{Rustls, RustlsCrypto, Tls, TlsProvider},
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+#[cfg(any(feature = "imap", feature = "smtp", feature = "jmap"))]
 use url::Url;
 
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct Config {
     #[serde(alias = "name")]
@@ -23,6 +24,26 @@ pub struct Config {
     pub signature_delim: Option<String>,
     pub downloads_dir: Option<PathBuf>,
     pub accounts: HashMap<String, AccountConfig>,
+}
+
+impl Config {
+    /// Serializes `self` to TOML and writes it to `path`, creating
+    /// any missing parent directories. Used by the wizard to persist
+    /// a freshly-built configuration.
+    pub fn write(&self, path: &Path) -> Result<()> {
+        let toml = toml::to_string_pretty(self).context("Serialize TOML config error")?;
+
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).with_context(|| {
+                format!("Create TOML config parent `{}` error", parent.display())
+            })?;
+        }
+
+        fs::write(path, toml)
+            .with_context(|| format!("Write TOML config `{}` error", path.display()))?;
+
+        Ok(())
+    }
 }
 
 impl TomlConfig for Config {
@@ -45,7 +66,7 @@ impl TomlConfig for Config {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct AccountConfig {
     #[serde(default)]
@@ -53,6 +74,7 @@ pub struct AccountConfig {
     pub imap: Option<ImapConfig>,
     pub smtp: Option<SmtpConfig>,
     pub jmap: Option<JmapConfig>,
+    pub maildir: Option<MaildirConfig>,
     #[serde(deserialize_with = "shell_expanded_string")]
     pub email: String,
     pub display_name: Option<String>,
@@ -61,7 +83,7 @@ pub struct AccountConfig {
     pub downloads_dir: Option<PathBuf>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct ImapConfig {
     /// IMAP server address. Either a bare authority
@@ -105,7 +127,7 @@ pub fn parse_imap_server(server: &str) -> Result<Url> {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct SmtpConfig {
     /// SMTP server address. Either a bare authority
@@ -155,7 +177,7 @@ pub fn parse_smtp_server(server: &str) -> Result<Url> {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct JmapConfig {
     /// JMAP server address. Either a bare authority for `/.well-known/jmap`
@@ -211,7 +233,7 @@ pub fn jmap_http_auth(config: JmapAuthConfig) -> Result<secrecy::SecretString> {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub enum JmapAuthConfig {
     Header(Secret),
@@ -225,7 +247,24 @@ pub enum JmapAuthConfig {
     },
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct MaildirConfig {
+    /// Filesystem root holding the per-account Maildir tree. The
+    /// directory itself must already exist (the wizard does not
+    /// create it); each child mailbox is a `Maildir` (with the
+    /// standard `cur`/`new`/`tmp` subdirs).
+    pub root: PathBuf,
+}
+
+#[cfg(feature = "maildir")]
+impl MaildirConfig {
+    pub fn into_client(self) -> io_maildir::client::MaildirClient {
+        io_maildir::client::MaildirClient::new(self.root)
+    }
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct TlsConfig {
     pub provider: Option<TlsProviderConfig>,
@@ -234,20 +273,20 @@ pub struct TlsConfig {
     pub cert: Option<PathBuf>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub enum TlsProviderConfig {
     Rustls,
     NativeTls,
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct RustlsConfig {
     pub crypto: Option<RustlsCryptoConfig>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub enum RustlsCryptoConfig {
     Aws,
@@ -275,7 +314,7 @@ impl TryFrom<TlsConfig> for Tls {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub enum SaslConfig {
     Anonymous(SaslAnonymousConfig),
@@ -287,13 +326,13 @@ pub enum SaslConfig {
     ScramSha256(SaslScramSha256Config),
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct SaslAnonymousConfig {
     pub message: Option<String>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct SaslLoginConfig {
     #[serde(deserialize_with = "shell_expanded_string")]
@@ -301,7 +340,7 @@ pub struct SaslLoginConfig {
     pub password: Secret,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct SaslPlainConfig {
     pub authzid: Option<String>,
@@ -310,7 +349,7 @@ pub struct SaslPlainConfig {
     pub passwd: Secret,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct SaslOauthbearerConfig {
     #[serde(deserialize_with = "shell_expanded_string")]
@@ -320,7 +359,7 @@ pub struct SaslOauthbearerConfig {
     pub token: Secret,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct SaslXoauth2Config {
     #[serde(deserialize_with = "shell_expanded_string")]
@@ -328,7 +367,7 @@ pub struct SaslXoauth2Config {
     pub token: Secret,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub struct SaslScramSha256Config {
     #[serde(deserialize_with = "shell_expanded_string")]

@@ -16,13 +16,14 @@ features = ["imap"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
-default = ["imap", "smtp", "jmap", "rustls-ring"]
-imap = ["dep:io-imap", "io-imap/client"]
-smtp = ["dep:io-smtp", "io-smtp/client"]
-jmap = ["dep:io-jmap", "dep:base64", "io-jmap/client"]
-native-tls = ["pimalaya-stream/native-tls", "io-imap?/native-tls", "io-jmap?/native-tls", "io-smtp?/native-tls"]
-rustls-aws = ["pimalaya-stream/rustls-aws", "io-imap?/rustls-aws", "io-jmap?/rustls-aws", "io-smtp?/rustls-aws"]
-rustls-ring = ["pimalaya-stream/rustls-ring", "io-imap?/rustls-ring", "io-jmap?/rustls-ring", "io-smtp?/rustls-ring"]
+default = ["imap", "smtp", "jmap", "maildir", "rustls-ring"]
+imap = ["dep:io-imap", "io-imap/client", "io-email/imap", "pimalaya-cli/imap"]
+smtp = ["dep:io-smtp", "io-smtp/client", "io-email/smtp", "pimalaya-cli/smtp"]
+jmap = ["dep:io-jmap", "dep:base64", "io-jmap/client", "io-email/jmap", "pimalaya-cli/jmap"]
+maildir = ["dep:io-maildir", "io-maildir/client", "io-email/maildir"]
+native-tls = ["pimalaya-stream/native-tls", "io-discovery/native-tls", "io-imap?/native-tls", "io-jmap?/native-tls", "io-smtp?/native-tls"]
+rustls-aws = ["pimalaya-stream/rustls-aws", "io-discovery/rustls-aws", "io-imap?/rustls-aws", "io-jmap?/rustls-aws", "io-smtp?/rustls-aws"]
+rustls-ring = ["pimalaya-stream/rustls-ring", "io-discovery/rustls-ring", "io-imap?/rustls-ring", "io-jmap?/rustls-ring", "io-smtp?/rustls-ring"]
 vendored = ["pimalaya-stream/vendored"]
 
 [build-dependencies]
@@ -33,13 +34,17 @@ anyhow = "1"
 base64 = { version = "0.22", optional = true }
 chrono = { version = "0.4", default-features = false }
 edtui = { version = "0.11", features = ["system-editor"] }
-html2text = "0.12"
+html2text = "0.17"
+io-discovery = { version = "0.0.1", default-features = false, features = ["pacc", "autoconfig", "rfc6186", "client"] }
+io-email = { version = "0.0.1", default-features = false, features = ["client"] }
 io-imap = { version = "0.0.1", default-features = false, optional = true }
 io-jmap = { version = "0.0.1", default-features = false, optional = true }
+io-maildir = { version = "0.0.1", default-features = false, optional = true }
 io-smtp = { version = "0.0.1", default-features = false, optional = true }
 log = "0.4"
-mail-parser = "0.9"
+mail-parser = "0.11"
 mml = "1"
+pimalaya-cli = { version = "0.0.1", default-features = false, features = ["prompt", "wizard", "spinner"] }
 pimalaya-config = { version = "0.0.1", default-features = false, features = ["toml", "secret"] }
 pimalaya-stream = { version = "0.0.1", default-features = false, features = ["std"] }
 ratatui = "0.30"
@@ -49,6 +54,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 shellexpand = "3.1"
 simplelog = "0.12"
+toml = "0.8"
 url = { version = "2.2", features = ["serde"] }
 uuid = { version = "1.19", features = ["v4"] }
 
