@@ -22,7 +22,7 @@ use ratatui::{
     widgets::{Block, Borders, Widget},
 };
 
-use crate::app::{App, Keybinds, Panel};
+use crate::app::{keybinds::Keybinds, panel::Panel, state::App};
 
 use super::layout::get_border_style;
 

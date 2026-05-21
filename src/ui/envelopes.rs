@@ -23,7 +23,7 @@ use ratatui::{
 };
 
 use super::layout::get_border_style;
-use crate::app::{App, Panel};
+use crate::app::{panel::Panel, state::App};
 
 pub fn render_envelopes(frame: &mut Frame, app: &mut App, area: Rect) {
     let header_cells = ["Flags", "Subject", "From", "Date"].map(Cell::from);

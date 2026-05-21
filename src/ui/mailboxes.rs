@@ -24,7 +24,7 @@ use ratatui::{
 };
 
 use super::layout::get_border_style;
-use crate::app::{App, Panel};
+use crate::app::{panel::Panel, state::App};
 
 pub fn render_mailboxes(frame: &mut Frame, app: &mut App, area: Rect) {
     let items: Vec<ListItem> = app

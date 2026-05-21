@@ -43,7 +43,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(any(feature = "imap", feature = "smtp", feature = "jmap"))]
 use url::Url;
 
-use crate::{app::Keybinds, theme::Theme, themes};
+use crate::{app::keybinds::Keybinds, theme::Theme, themes};
 
 /// `deny_unknown_fields` is intentionally omitted so the same TOML
 /// file can be shared with the `himalaya` CLI: top-level CLI-only

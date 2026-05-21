@@ -15,22 +15,18 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-//! Library crate backing the `himalaya-tui` binary.
-//!
-//! The binary is a thin shell that wires [`cli`] flag parsing and
-//! [`config`] resolution into an [`app::App`] state machine rendered
-//! by the [`ui`] module. The optional [`wizard`] runs first-time
-//! discovery when no configuration file exists or `--no-config` is
-//! passed. [`theme`] holds the resolved color theme and [`themes`]
-//! ships the built-in presets.
+use crate::app::state::App;
 
-pub mod app;
-pub mod cli;
-pub mod config;
-pub mod mime;
-pub mod runtime;
-pub mod theme;
-pub mod themes;
-pub mod ui;
-#[cfg(all(feature = "imap", feature = "smtp", feature = "jmap"))]
-pub mod wizard;
+impl App {
+    pub fn quit(&mut self) {
+        self.running = false;
+    }
+
+    pub fn set_status(&mut self, message: impl Into<String>) {
+        self.status_message = Some(message.into());
+    }
+
+    pub fn clear_status(&mut self) {
+        self.status_message = None;
+    }
+}

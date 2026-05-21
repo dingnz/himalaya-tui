@@ -15,22 +15,14 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-//! Library crate backing the `himalaya-tui` binary.
-//!
-//! The binary is a thin shell that wires [`cli`] flag parsing and
-//! [`config`] resolution into an [`app::App`] state machine rendered
-//! by the [`ui`] module. The optional [`wizard`] runs first-time
-//! discovery when no configuration file exists or `--no-config` is
-//! passed. [`theme`] holds the resolved color theme and [`themes`]
-//! ships the built-in presets.
+//! Top-row header strip: shows the active account name.
 
-pub mod app;
-pub mod cli;
-pub mod config;
-pub mod mime;
-pub mod runtime;
-pub mod theme;
-pub mod themes;
-pub mod ui;
-#[cfg(all(feature = "imap", feature = "smtp", feature = "jmap"))]
-pub mod wizard;
+use ratatui::{Frame, layout::Rect, widgets::Paragraph};
+
+use crate::app::state::App;
+
+pub fn render_header(frame: &mut Frame, app: &App, area: Rect) {
+    let title = format!(" Himalaya TUI — {} ", app.account_name);
+    let header = Paragraph::new(title).style(app.theme.header);
+    frame.render_widget(header, area);
+}

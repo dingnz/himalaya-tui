@@ -16,7 +16,10 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 pub mod compose;
+pub mod dialog;
 pub mod envelopes;
+pub mod header;
 pub mod layout;
 pub mod mailboxes;
 pub mod message;
+pub mod status;

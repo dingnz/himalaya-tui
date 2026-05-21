@@ -22,7 +22,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap},
 };
 
-use crate::app::{App, Panel};
+use crate::app::{panel::Panel, state::App};
 
 use super::layout::get_border_style;
 

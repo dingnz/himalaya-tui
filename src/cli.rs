@@ -30,7 +30,7 @@ use pimalaya_cli::{
     printer::Printer,
 };
 
-use crate::app::Keybinds;
+use crate::app::keybinds::Keybinds;
 
 #[derive(Parser, Debug)]
 #[command(name = env!("CARGO_PKG_NAME"))]
