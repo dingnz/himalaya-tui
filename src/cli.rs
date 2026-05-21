@@ -19,7 +19,16 @@
 
 use std::path::PathBuf;
 
-use clap::Parser;
+use anyhow::Result;
+use clap::{CommandFactory, Parser, Subcommand};
+use pimalaya_cli::{
+    clap::{
+        args::JsonFlag,
+        commands::{CompletionCommand, ManualCommand},
+        parsers::path_parser,
+    },
+    printer::Printer,
+};
 
 use crate::app::Keybinds;
 
@@ -46,7 +55,7 @@ pub struct HimalayaTuiCli {
     /// public config from your private(s) one(s). Multiple paths can
     /// also be provided by delimiting them with `:` (like `$PATH` in
     /// a POSIX shell).
-    #[arg(short, long = "config", env = "HIMALAYA_CONFIG")]
+    #[arg(short, long = "config", env = "HIMALAYA_CONFIG", global = true)]
     #[arg(value_name = "PATH", value_parser = path_parser, value_delimiter = ':')]
     pub config_paths: Vec<PathBuf>,
 
@@ -76,14 +85,29 @@ pub struct HimalayaTuiCli {
     /// the TOML config (if present), otherwise to Vim.
     #[arg(long, value_name = "FLAVOR", value_enum)]
     pub keybinds: Option<Keybinds>,
+
+    #[command(flatten)]
+    pub json: JsonFlag,
+
+    #[command(subcommand)]
+    pub command: Option<HimalayaTuiCommand>,
 }
 
-fn path_parser(path: &str) -> Result<PathBuf, String> {
-    match shellexpand::full(path) {
-        Ok(path) => {
-            let path = PathBuf::from(&*path);
-            Ok(path.canonicalize().unwrap_or(path))
+/// Auxiliary subcommands. When none is given, the binary launches the
+/// TUI as usual.
+#[derive(Debug, Subcommand)]
+pub enum HimalayaTuiCommand {
+    /// Generate shell completion scripts.
+    Completions(CompletionCommand),
+    /// Generate man pages.
+    Manuals(ManualCommand),
+}
+
+impl HimalayaTuiCommand {
+    pub fn execute(self, printer: &mut impl Printer) -> Result<()> {
+        match self {
+            Self::Completions(cmd) => cmd.execute(printer, HimalayaTuiCli::command()),
+            Self::Manuals(cmd) => cmd.execute(printer, HimalayaTuiCli::command()),
         }
-        Err(err) => Err(err.to_string()),
     }
 }

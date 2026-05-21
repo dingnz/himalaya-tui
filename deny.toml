@@ -19,8 +19,8 @@ allow-git = [
   "https://github.com/pimalaya/io-maildir",
   "https://github.com/pimalaya/io-smtp",
   "https://github.com/pimalaya/mml",
-  "https://github.com/pimalaya/stream"
-  "https://github.com/soywod/domain",
+  "https://github.com/pimalaya/stream",
+  "https://github.com/soywod/domain"
 ]
 unknown-git = "deny"
 unknown-registry = "deny"

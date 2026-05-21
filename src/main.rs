@@ -20,14 +20,17 @@ use std::{fs::File, io, path::PathBuf, time::Duration};
 use anyhow::{Result, anyhow};
 use clap::Parser;
 use edtui::actions::{Execute, OpenSystemEditor, system_editor};
-use himalaya_tui::app::{App, ComposeAction, Dialog, EnvelopeAction, Keybinds, Panel};
-use himalaya_tui::cli::HimalayaTuiCli;
-use himalaya_tui::config::{AccountConfig, Config};
-use himalaya_tui::ui;
 #[cfg(all(feature = "imap", feature = "smtp", feature = "jmap"))]
 use himalaya_tui::wizard;
+use himalaya_tui::{
+    app::{App, ComposeAction, Dialog, EnvelopeAction, Keybinds, Panel},
+    cli::HimalayaTuiCli,
+    config::{AccountConfig, Config},
+    ui,
+};
 use io_email::{client::EmailClientStd, flag::Flag};
 use mml::compiler::message::MmlCompilerBuilder;
+use pimalaya_cli::printer::StdoutPrinter;
 use pimalaya_config::toml::TomlConfig;
 use ratatui::{
     Terminal,
@@ -46,6 +49,13 @@ use ratatui::{
 
 fn main() -> Result<()> {
     let cli = HimalayaTuiCli::parse();
+
+    // Auxiliary subcommands (completions, manuals) run before the TUI
+    // ever starts and print to stdout.
+    if let Some(command) = cli.command {
+        let mut printer = StdoutPrinter::new(&cli.json);
+        return command.execute(&mut printer);
+    }
 
     let log_file = File::create("/tmp/himalaya-tui.log")?;
     simplelog::WriteLogger::init(
@@ -648,7 +658,7 @@ fn save_to_drafts(app: &mut App, client: &mut EmailClientStd) {
     app.set_status("Saving to Drafts...");
 
     match client.add_message("Drafts", &[Flag::Draft], raw) {
-        Ok(()) => {
+        Ok(_) => {
             app.set_status("Saved to Drafts");
             app.cancel_compose();
         }
