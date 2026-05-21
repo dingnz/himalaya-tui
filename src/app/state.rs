@@ -122,7 +122,6 @@ impl App {
             editor_handler,
             keybinds,
             theme,
-            status_message: Some("Loading mailboxes...".into()),
             ..Self::default()
         }
     }

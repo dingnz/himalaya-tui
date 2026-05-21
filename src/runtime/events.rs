@@ -55,17 +55,9 @@ pub fn run(
     mut app: App,
     mut client: EmailClientStd,
 ) -> Result<()> {
-    app.set_status("Connecting...");
-    terminal.draw(|f| ui::layout::render(f, &mut app))?;
-
-    match client.list_mailboxes(false) {
-        Ok(mailboxes) => {
-            app.set_mailboxes(mailboxes);
-            load_envelopes(&mut app, &mut client);
-        }
-        Err(e) => app.set_status(format!("Error: {e}")),
-    }
-
+    // Initial mailbox + envelope fetch already happened in startup
+    // (under the spinner), so the very first frame can show real
+    // content instead of a "Connecting..." placeholder.
     run_app(terminal, &mut app, &mut client)
 }
 

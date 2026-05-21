@@ -23,11 +23,13 @@ use std::path::PathBuf;
 
 use anyhow::{Result, anyhow};
 use io_email::client::EmailClientStd;
+use pimalaya_cli::spinner::Spinner;
 use pimalaya_config::toml::TomlConfig;
 
 use crate::{
     app::{keybinds::Keybinds, state::App},
     config::{AccountConfig, Config},
+    runtime::events::load_envelopes,
     theme::Theme,
 };
 
@@ -93,9 +95,20 @@ pub fn load_then_connect(
     // keys.
     let keybinds = keybinds_cli.or(keybinds_config);
 
-    let client = build_client(account_config)?;
+    // Past this point everything is blocking I/O with no further
+    // interactive prompts, so the spinner is safe until just before
+    // the TUI grabs the alternate screen.
+    let spinner = Spinner::start("Building client...");
 
-    let app = App::new(
+    let mut client = match build_client(account_config) {
+        Ok(client) => client,
+        Err(err) => {
+            spinner.failure(format!("{err}"));
+            return Err(err);
+        }
+    };
+
+    let mut app = App::new(
         name,
         from,
         from_name,
@@ -104,6 +117,26 @@ pub fn load_then_connect(
         keybinds,
         theme,
     );
+
+    spinner.set_message("Fetching mailboxes...");
+    match client.list_mailboxes(false) {
+        Ok(mailboxes) => app.set_mailboxes(mailboxes),
+        Err(err) => {
+            // Hand the error to the TUI status bar so the user can
+            // still see and reach the rest of the interface.
+            app.set_status(format!("Error: {err}"));
+            spinner.clear();
+            return Ok((app, client));
+        }
+    }
+
+    if let Some(name) = app.selected_mailbox_name() {
+        spinner.set_message(format!("Fetching envelopes from {name}..."));
+    }
+    load_envelopes(&mut app, &mut client);
+
+    spinner.clear();
+
     Ok((app, client))
 }
 
