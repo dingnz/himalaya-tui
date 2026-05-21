@@ -1,110 +1,233 @@
-################################################################################
-###[ Himalaya TUI Configuration ]###############################################
-################################################################################
-
-# Global display name for all accounts.
+# ================================================================================
+# `himalaya-tui` configuration file.
 #
-display-name = "Example"
-
-# Global signature for all accounts.
+# Loaded from the first valid path among:
+#   - $XDG_CONFIG_HOME/himalaya/config.toml
+#   - $HOME/.config/himalaya/config.toml
+#   - $HOME/.himalayarc
 #
-signature = "Regards,\n"
-
-# Signature delimiter.
+# Override with `himalaya-tui -c <PATH>` or `HIMALAYA_CONFIG=<PATH>`. Multiple
+# paths can be passed at once, separated by `:`; the first one is the base and
+# the rest are deep-merged on top of it. `--no-config` skips on-disk config.
 #
-signature-delim = "-- \n"
-
-# Downloads directory path.
+# Run `himalaya-tui` once with no config file to launch the wizard, which
+# discovers IMAP/SMTP/JMAP defaults via PACC, Thunderbird Autoconfiguration and
+# RFC 6186 SRV, then keeps the resulting account in memory for that session
+# only (the TUI does not write to disk).
 #
-downloads-dir = "~/Downloads"
+# The path is shared with the `himalaya` CLI: one TOML file backs both
+# binaries. TUI-only fields (`display-name`, `signature`, `signature-delim`,
+# `from`, `from-name`, `keybinds`) and CLI-only sections (`table`, `envelope`,
+# `mailbox`, `message`, `attachment`, `account`) coexist without errors.
+# ================================================================================
 
-################################################################################
-###[ Account Configuration ]####################################################
-################################################################################
+# --------------------------------------------------------------------------------
+# Global config
+# --------------------------------------------------------------------------------
 
+# Default From display name used by the in-app composer when an account does
+# not override it.
+#display-name = "Example"
+
+# Default signature appended to outgoing drafts.
+#signature = "Regards,\n"
+
+# Signature delimiter inserted between the body and the signature. Defaults to
+# the RFC 3676 `"-- \n"` separator.
+#signature-delim = "-- \n"
+
+# Default download directory for attachments. Falls back to `$TMPDIR`.
+#downloads-dir = "~/downloads"
+
+# Composer keybinding flavor: `vim` (default) or `emacs`. The `--keybinds` CLI
+# flag overrides this. The flavor drives both edtui's built-in bindings and
+# the event loop's own intercepts (notably `Ctrl-e`, which collides with
+# Emacs' "move to end of line").
+#keybinds = "vim"
+
+# --------------------------------------------------------------------------------
+# Account config
+# --------------------------------------------------------------------------------
+
+# Declare one section per account. Pick one with `[ACCOUNT]` (positional CLI
+# argument) or let himalaya-tui use the entry flagged `default = true`.
 [accounts.example]
 
-# Make this the default account.
-#
+# Use this account when no account name is passed on the command line.
 default = true
 
-# Email address for this account.
-#
-email = "example@localhost"
+# From address used when sending. Also prefills the wizard's SASL/JMAP login.
+# The `--from <EMAIL>` CLI flag overrides this.
+#from = "user@example.com"
 
-# Display name for this account.
-#
-display-name = "Example"
+# From display name. The `--from-name <NAME>` CLI flag overrides this.
+#from-name = "Example User"
 
-################################################################################
-###[ IMAP Configuration ]#######################################################
-################################################################################
+# Per-account overrides for the global options above.
+#signature = "Best,\nExample User\n"
+#signature-delim = "-- \n"
+#downloads-dir = "~/downloads/example"
 
-[accounts.example.imap]
+# --------------------------------------------------------------------------------
+# IMAP config
+# https://www.iana.org/go/rfc9051
+# --------------------------------------------------------------------------------
 
-# IMAP server URL.
-# Supported schemes: imap://, imaps://, unix://
-#
-url = "imaps://imap.example.com:993"
+# IMAP server. Either a bare authority (`host[:port]`, treated as
+# `imaps://<authority>` by default), or a full URL with `imap://` (cleartext,
+# optionally upgraded via STARTTLS) or `imaps://` (implicit TLS) scheme.
+imap.server = "example.com"
+#imap.server = "imap.example.com:143"
+#imap.server = "imap://example.com:143"
+#imap.server = "imaps://example.com:993"
 
-# Enable STARTTLS upgrade (only for imap:// scheme).
-#
-#starttls = false
+# TLS provider, defaults to the first available at runtime.
+#imap.tls.provider = "rustls"
+#imap.tls.provider = "native-tls"
 
-################################################################################
-###[ TLS Configuration ]########################################################
-################################################################################
+# Crypto provider for rustls, defaults to the first available at runtime.
+#imap.tls.rustls.crypto = "ring"
+#imap.tls.rustls.crypto = "aws"
 
-[accounts.example.imap.tls]
+# Custom TLS certificate (extra root, PEM-encoded).
+#imap.tls.cert = "/path/to/custom/cert.pem"
 
-# TLS provider: Rustls or NativeTls
-#
-#provider = "Rustls"
+# Enable STARTTLS (only valid when the server resolves to `imap://`).
+#imap.starttls = false
 
-# Rustls crypto backend: Aws or Ring
-#
-#rustls.crypto = "Ring"
+# Pick exactly one SASL mechanism among `anonymous`, `login`, `plain`,
+# `oauthbearer`, `xoauth2`, `scram-sha-256`. Omit the whole `imap.sasl` table
+# to skip authentication entirely (no `AUTHENTICATE` command sent).
 
-# Custom TLS certificate path (optional).
-#
-#cert = "/path/to/cert.pem"
+# SASL ANONYMOUS
+# https://datatracker.ietf.org/doc/html/rfc4505
+#imap.sasl.anonymous.message = "himalaya"
 
-################################################################################
-###[ SASL Authentication ]######################################################
-################################################################################
+# SASL PLAIN
+# https://datatracker.ietf.org/doc/html/rfc4616
+imap.sasl.plain.authcid = "user@example.com"
+imap.sasl.plain.passwd.raw = "***"
+#imap.sasl.plain.passwd.command = "pass show example"
+#imap.sasl.plain.passwd.command = ["mimosa", "password", "read", "example"]
 
-[accounts.example.imap.sasl]
+# SASL LOGIN
+# https://datatracker.ietf.org/doc/html/draft-murchison-sasl-login-00
+#imap.sasl.login.username = "user@example.com"
+#imap.sasl.login.password.raw = "***"
 
-# Authentication mechanisms to try (in order).
-# Available: Login, Plain, Anonymous
-#
-mechanisms = ["Plain", "Login"]
+# SASL OAUTHBEARER (host/port echoed in the GS2 header; usually mirror the
+# server you actually connect to).
+# https://datatracker.ietf.org/doc/html/rfc7628
+#imap.sasl.oauthbearer.username = "user@example.com"
+#imap.sasl.oauthbearer.host = "imap.example.com"
+#imap.sasl.oauthbearer.port = 993
+#imap.sasl.oauthbearer.token.raw = "***"
+#imap.sasl.oauthbearer.token.command = ["ortie", "token", "read", "example"]
 
-# PLAIN authentication configuration.
-#
-[accounts.example.imap.sasl.plain]
-#authzid = "optional-authorization-id"
-authcid = "example@localhost"
+# SASL XOAUTH2 (Google's pre-standard OAuth 2.0 SASL).
+# https://developers.google.com/gmail/imap/xoauth2-protocol
+#imap.sasl.xoauth2.username = "user@example.com"
+#imap.sasl.xoauth2.token.raw = "***"
 
-# Password can be raw (not recommended) or from a command.
-#
-#passwd.raw = "your-password"
-passwd.command = ["pass", "show", "email/example"]
+# SASL SCRAM-SHA-256.
+# https://datatracker.ietf.org/doc/html/rfc7677
+#imap.sasl.scram-sha-256.username = "user@example.com"
+#imap.sasl.scram-sha-256.password.raw = "***"
 
-# LOGIN authentication configuration (alternative to PLAIN).
-#
-#[accounts.example.imap.sasl.login]
-#username = "example@localhost"
-#password.raw = "your-password"
-#password.command = ["pass", "show", "email/example"]
+# --------------------------------------------------------------------------------
+# JMAP config
+# https://www.iana.org/go/rfc8620
+# https://www.iana.org/go/rfc8621
+# --------------------------------------------------------------------------------
 
-################################################################################
-###[ IMAP Extensions ]##########################################################
-################################################################################
+# JMAP server address. Either a bare authority (auto-discovered via
+# `GET /.well-known/jmap`) or a full session URL.
+#jmap.server = "fastmail.com"
+#jmap.server = "https://api.fastmail.com/jmap/session"
 
-[accounts.example.imap.extensions]
+# JMAP TLS provider (mirrors the imap.tls block above).
+#jmap.tls.provider = "rustls"
+#jmap.tls.rustls.crypto = "ring"
+#jmap.tls.cert = "/path/to/custom/cert.pem"
 
-# Automatically send ID command after authentication.
-# Some providers require this (e.g., imap.126.com).
-#
-#id.always-after-auth = false
+# Pick exactly one of `header`, `bearer`, `basic`.
+
+# Raw `Authorization` header value, used verbatim.
+#jmap.auth.header.raw = "Bearer eyJhbGciOiJ..."
+#jmap.auth.header.command = "pass show fastmail-token"
+
+# OAuth 2.0 / API token bearer.
+#jmap.auth.bearer.token.raw = "***"
+#jmap.auth.bearer.token.command = ["mimosa", "password", "read", "fastmail-api"]
+
+# HTTP Basic.
+#jmap.auth.basic.username = "user@example.com"
+#jmap.auth.basic.password.raw = "***"
+#jmap.auth.basic.password.command = "pass show fastmail"
+
+# --------------------------------------------------------------------------------
+# Maildir config
+# --------------------------------------------------------------------------------
+
+# Root directory containing one subdirectory per mailbox (Maildir++ layout).
+#maildir.root = "~/Mail/example"
+
+# --------------------------------------------------------------------------------
+# SMTP config
+# https://www.iana.org/go/rfc5321
+# --------------------------------------------------------------------------------
+
+# SMTP server. Either a bare authority (`host[:port]`, treated as
+# `smtps://<authority>` by default), or a full URL with `smtp://` (cleartext,
+# optionally upgraded via STARTTLS) or `smtps://` (implicit TLS) scheme.
+# When an `smtp` block is configured, the composer routes through it on send;
+# otherwise it falls back to JMAP.
+smtp.server = "example.com"
+#smtp.server = "smtp.example.com:587"
+#smtp.server = "smtp://example.com:587"
+#smtp.server = "smtps://example.com:465"
+
+# TLS provider, defaults to the first available at runtime.
+#smtp.tls.provider = "rustls"
+#smtp.tls.provider = "native-tls"
+
+# Crypto provider for rustls, defaults to the first available at runtime.
+#smtp.tls.rustls.crypto = "ring"
+#smtp.tls.rustls.crypto = "aws"
+
+# Custom TLS certificate (extra root, PEM-encoded).
+#smtp.tls.cert = "/path/to/custom/cert.pem"
+
+# Enable STARTTLS (only valid when the server resolves to `smtp://`).
+#smtp.starttls = false
+
+# Pick exactly one SASL mechanism among `anonymous`, `login`, `plain`,
+# `oauthbearer`, `xoauth2`, `scram-sha-256`. Omit the whole `smtp.sasl` table
+# to skip authentication entirely.
+
+# SASL ANONYMOUS
+#smtp.sasl.anonymous.message = "himalaya"
+
+# SASL PLAIN
+smtp.sasl.plain.authcid = "user@example.com"
+smtp.sasl.plain.passwd.raw = "***"
+#smtp.sasl.plain.passwd.command = "pass show example"
+#smtp.sasl.plain.passwd.command = ["mimosa", "password", "read", "example"]
+
+# SASL LOGIN
+#smtp.sasl.login.username = "user@example.com"
+#smtp.sasl.login.password.raw = "***"
+
+# SASL OAUTHBEARER
+#smtp.sasl.oauthbearer.username = "user@example.com"
+#smtp.sasl.oauthbearer.host = "smtp.example.com"
+#smtp.sasl.oauthbearer.port = 465
+#smtp.sasl.oauthbearer.token.raw = "***"
+
+# SASL XOAUTH2
+#smtp.sasl.xoauth2.username = "user@example.com"
+#smtp.sasl.xoauth2.token.raw = "***"
+
+# SASL SCRAM-SHA-256
+#smtp.sasl.scram-sha-256.username = "user@example.com"
+#smtp.sasl.scram-sha-256.password.raw = "***"
