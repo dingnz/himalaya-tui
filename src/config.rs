@@ -246,6 +246,7 @@ pub struct AccountConfig {
     pub smtp: Option<SmtpConfig>,
     pub jmap: Option<JmapConfig>,
     pub maildir: Option<MaildirConfig>,
+    pub m2dir: Option<M2dirConfig>,
     pub from: Option<String>,
     pub from_name: Option<String>,
     pub signature: Option<String>,
@@ -433,7 +434,25 @@ pub struct MaildirConfig {
 #[cfg(feature = "maildir")]
 impl MaildirConfig {
     pub fn into_client(self) -> io_maildir::client::MaildirClient {
-        io_maildir::client::MaildirClient::new(self.root)
+        let root = io_maildir::path::MaildirPath::new(self.root.to_string_lossy().into_owned());
+        io_maildir::client::MaildirClient::new(root)
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct M2dirConfig {
+    /// Filesystem root holding the m2store (a directory carrying a
+    /// `.m2store` marker). Each child mailbox is an m2dir with a
+    /// `.m2dir` marker.
+    pub root: PathBuf,
+}
+
+#[cfg(feature = "m2dir")]
+impl M2dirConfig {
+    pub fn into_client(self) -> io_m2dir::client::M2dirClient {
+        let root = io_m2dir::path::M2dirPath::new(self.root.to_string_lossy().into_owned());
+        io_m2dir::client::M2dirClient::new(root)
     }
 }
 

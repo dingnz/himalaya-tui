@@ -56,9 +56,9 @@ use url::Url;
 
 use crate::{
     config::{
-        AccountConfig, ImapConfig, JmapAuthConfig, JmapConfig, MaildirConfig, SaslAnonymousConfig,
-        SaslConfig, SaslLoginConfig, SaslOauthbearerConfig, SaslPlainConfig, SaslScramSha256Config,
-        SaslXoauth2Config, SmtpConfig,
+        AccountConfig, ImapConfig, JmapAuthConfig, JmapConfig, M2dirConfig, MaildirConfig,
+        SaslAnonymousConfig, SaslConfig, SaslLoginConfig, SaslOauthbearerConfig, SaslPlainConfig,
+        SaslScramSha256Config, SaslXoauth2Config, SmtpConfig,
     },
     wizard::{autoconfig, pacc, srv},
 };
@@ -105,7 +105,7 @@ pub fn run(from: Option<&str>) -> Result<AccountConfig> {
 /// input itself does not already carry a local part.
 pub fn run_with_input(input: &str, from: Option<&str>) -> Result<AccountConfig> {
     match classify(input)? {
-        Input::FileUrl(path) => build_maildir_account(path),
+        Input::FileUrl(path) => build_fs_account(path),
         Input::Url(url) => build_url_account(url, from),
         Input::Domain(domain) => build_discovery_account(None, &domain, from),
         Input::Email { local, domain } => build_discovery_account(Some(&local), &domain, from),
@@ -147,17 +147,29 @@ fn classify(input: &str) -> Result<Input> {
     }
 }
 
-// ── Maildir ─────────────────────────────────────────────────────────────────
+// ── Maildir / m2dir ─────────────────────────────────────────────────────────
 
-fn build_maildir_account(root: PathBuf) -> Result<AccountConfig> {
+fn build_fs_account(root: PathBuf) -> Result<AccountConfig> {
     if !root.is_dir() {
         bail!(
-            "Maildir root `{}` does not exist or is not a directory",
+            "Filesystem root `{}` does not exist or is not a directory",
             root.display()
         );
     }
 
-    Ok(AccountConfig {
+    // Presence of a `.m2store` marker promotes the path to m2dir;
+    // otherwise treat it as a maildir root.
+    let mut cfg = empty_account();
+    if root.join(".m2store").is_file() {
+        cfg.m2dir = Some(M2dirConfig { root });
+    } else {
+        cfg.maildir = Some(MaildirConfig { root });
+    }
+    Ok(cfg)
+}
+
+fn empty_account() -> AccountConfig {
+    AccountConfig {
         default: true,
         from: None,
         from_name: None,
@@ -166,9 +178,10 @@ fn build_maildir_account(root: PathBuf) -> Result<AccountConfig> {
         downloads_dir: None,
         imap: None,
         jmap: None,
-        maildir: Some(MaildirConfig { root }),
+        maildir: None,
+        m2dir: None,
         smtp: None,
-    })
+    }
 }
 
 // ── URL input ───────────────────────────────────────────────────────────────
@@ -276,6 +289,7 @@ fn build_discovery_account(
         imap: Some(imap_cfg),
         jmap: None,
         maildir: None,
+        m2dir: None,
         smtp: smtp_cfg,
     })
 }
@@ -428,6 +442,7 @@ fn account_jmap_only(jmap: JmapConfig) -> AccountConfig {
         imap: None,
         jmap: Some(jmap),
         maildir: None,
+        m2dir: None,
         smtp: None,
     }
 }

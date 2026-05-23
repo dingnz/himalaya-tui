@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use io_email::flag::Flag;
+use io_email::flag::{Flag, IanaFlag};
 
 use crate::app::{compose::ComposeAction, envelopes::EnvelopeAction, state::App};
 
@@ -49,9 +49,9 @@ impl FlagAction {
 
     pub fn flag(&self) -> Flag {
         match self {
-            FlagAction::Seen => Flag::Seen,
-            FlagAction::Flagged => Flag::Flagged,
-            FlagAction::Answered => Flag::Answered,
+            FlagAction::Seen => Flag::from_iana(IanaFlag::Seen),
+            FlagAction::Flagged => Flag::from_iana(IanaFlag::Flagged),
+            FlagAction::Answered => Flag::from_iana(IanaFlag::Answered),
         }
     }
 }

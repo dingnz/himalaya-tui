@@ -182,6 +182,12 @@ fn build_client(account_config: AccountConfig) -> Result<EmailClientStd> {
         configured = true;
     }
 
+    #[cfg(feature = "m2dir")]
+    if let Some(m2dir_cfg) = account_config.m2dir {
+        client = client.with_m2dir(m2dir_cfg.into_client());
+        configured = true;
+    }
+
     #[cfg(feature = "smtp")]
     if let Some(smtp_cfg) = account_config.smtp {
         match smtp_cfg.into_client() {

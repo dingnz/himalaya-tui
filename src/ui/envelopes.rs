@@ -15,7 +15,10 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use io_email::{envelope::Envelope, flag::Flag};
+use io_email::{
+    envelope::Envelope,
+    flag::{Flag, IanaFlag},
+};
 use ratatui::{
     Frame,
     layout::{Constraint, Rect},
@@ -35,7 +38,7 @@ pub fn render_envelopes(frame: &mut Frame, app: &mut App, area: Rect) {
         .envelopes
         .iter()
         .map(|envelope| {
-            let style = if envelope.flags.contains(&Flag::Seen) {
+            let style = if envelope.flags.contains(&Flag::from_iana(IanaFlag::Seen)) {
                 app.theme.envelope_seen
             } else {
                 app.theme.envelope_unread
@@ -107,26 +110,37 @@ pub fn render_envelopes(frame: &mut Frame, app: &mut App, area: Rect) {
 
 fn format_flags(envelope: &Envelope) -> String {
     let mut s = String::new();
-    s.push(if envelope.flags.contains(&Flag::Seen) {
-        ' '
-    } else {
-        '*'
-    });
-    s.push(if envelope.flags.contains(&Flag::Answered) {
-        '↩'
-    } else {
-        ' '
-    });
-    s.push(if envelope.flags.contains(&Flag::Flagged) {
-        '!'
-    } else {
-        ' '
-    });
-    s.push(if envelope.flags.contains(&Flag::Draft) {
-        'D'
-    } else {
-        ' '
-    });
+    s.push(
+        if envelope.flags.contains(&Flag::from_iana(IanaFlag::Seen)) {
+            ' '
+        } else {
+            '*'
+        },
+    );
+    s.push(
+        if envelope
+            .flags
+            .contains(&Flag::from_iana(IanaFlag::Answered))
+        {
+            '↩'
+        } else {
+            ' '
+        },
+    );
+    s.push(
+        if envelope.flags.contains(&Flag::from_iana(IanaFlag::Flagged)) {
+            '!'
+        } else {
+            ' '
+        },
+    );
+    s.push(
+        if envelope.flags.contains(&Flag::from_iana(IanaFlag::Draft)) {
+            'D'
+        } else {
+            ' '
+        },
+    );
     s
 }
 

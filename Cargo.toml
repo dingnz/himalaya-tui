@@ -17,11 +17,12 @@ features = ["imap"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
-default = ["imap", "smtp", "jmap", "maildir", "rustls-ring"]
+default = ["imap", "smtp", "jmap", "maildir", "m2dir", "rustls-ring"]
 imap = ["dep:io-imap", "io-imap/client", "io-email/imap", "pimalaya-cli/imap"]
 smtp = ["dep:io-smtp", "io-smtp/client", "io-email/smtp", "pimalaya-cli/smtp"]
 jmap = ["dep:io-jmap", "dep:base64", "io-jmap/client", "io-email/jmap", "pimalaya-cli/jmap"]
 maildir = ["dep:io-maildir", "io-maildir/client", "io-email/maildir"]
+m2dir = ["dep:io-m2dir", "io-m2dir/client", "io-email/m2dir"]
 native-tls = ["pimalaya-stream/native-tls", "io-discovery/native-tls", "io-imap?/native-tls", "io-jmap?/native-tls", "io-smtp?/native-tls"]
 rustls-aws = ["pimalaya-stream/rustls-aws", "io-discovery/rustls-aws", "io-imap?/rustls-aws", "io-jmap?/rustls-aws", "io-smtp?/rustls-aws"]
 rustls-ring = ["pimalaya-stream/rustls-ring", "io-discovery/rustls-ring", "io-imap?/rustls-ring", "io-jmap?/rustls-ring", "io-smtp?/rustls-ring"]
@@ -47,11 +48,12 @@ io-discovery = { version = "0.0.1", default-features = false, features = ["pacc"
 io-email = { version = "0.0.1", default-features = false, features = ["client"] }
 io-imap = { version = "0.0.1", default-features = false, optional = true }
 io-jmap = { version = "0.0.1", default-features = false, optional = true }
+io-m2dir = { version = "0.0.1", default-features = false, optional = true }
 io-maildir = { version = "0.0.1", default-features = false, optional = true }
 io-smtp = { version = "0.0.1", default-features = false, optional = true }
 log = "0.4"
 mail-parser = "0.11"
-mml = "1"
+mml = { version = "1", default-features = false, features = ["compiler", "interpreter"] }
 pimalaya-cli = { version = "0.0.1", default-features = false, features = ["prompt", "wizard", "spinner", "terminal"] }
 pimalaya-config = { version = "0.0.1", default-features = false, features = ["toml", "secret"] }
 pimalaya-stream = { version = "0.0.1", default-features = false, features = ["std"] }
@@ -76,6 +78,7 @@ io-email.git = "https://github.com/pimalaya/io-email"
 io-http.git = "https://github.com/pimalaya/io-http"
 io-imap.git = "https://github.com/pimalaya/io-imap"
 io-jmap.git = "https://github.com/pimalaya/io-jmap"
+io-m2dir.git = "https://github.com/pimalaya/io-m2dir"
 io-maildir.git = "https://github.com/pimalaya/io-maildir"
 io-smtp.git = "https://github.com/pimalaya/io-smtp"
 mml.git = "https://github.com/pimalaya/mml"

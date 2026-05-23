@@ -18,7 +18,10 @@
 //! Modal dialog handlers, one per [`Dialog`] variant, plus the read /
 //! reply / forward / save-draft / send helpers they dispatch to.
 
-use io_email::{client::EmailClientStd, flag::Flag};
+use io_email::{
+    client::EmailClientStd,
+    flag::{Flag, IanaFlag},
+};
 use mml::compiler::message::MmlCompilerBuilder;
 use ratatui::crossterm::event::KeyCode;
 
@@ -176,9 +179,9 @@ pub fn handle_flag_dialog(app: &mut App, key: KeyCode, client: &mut EmailClientS
             app.set_status(format!("{verb} flag {label}..."));
 
             let result = if add {
-                client.add_flags(&mailbox, &[&envelope.id], &[flag])
+                client.add_flags(&mailbox, &[&envelope.id], &[flag.clone()])
             } else {
-                client.delete_flags(&mailbox, &[&envelope.id], &[flag])
+                client.delete_flags(&mailbox, &[&envelope.id], &[flag.clone()])
             };
 
             match result {
@@ -253,7 +256,7 @@ fn save_to_drafts(app: &mut App, client: &mut EmailClientStd) {
 
     app.set_status("Saving to Drafts...");
 
-    match client.add_message("Drafts", &[Flag::Draft], raw) {
+    match client.add_message("Drafts", &[Flag::from_iana(IanaFlag::Draft)], raw) {
         Ok(_) => {
             app.set_status("Saved to Drafts");
             app.cancel_compose();
