@@ -343,7 +343,7 @@ fn select_mailbox(model: &mut Model) {
     model.envelopes.clear();
     close_bottom_panel(model);
     model.active_panel = Panel::Envelopes;
-    model.status_message = Some(format!("Loading envelopes from {}...", m.name));
+    model.status_message = Some(format!("Loading envelopes from {}…", m.name));
 }
 
 fn unselect_mailbox(model: &mut Model) {
@@ -633,7 +633,7 @@ fn read_selected(model: &mut Model) {
     let Some(mailbox) = model.selected_mailbox.clone() else {
         return;
     };
-    set_status(model, format!("Loading message {}...", envelope.id));
+    set_status(model, format!("Loading message {}…", envelope.id));
 
     let result = model.client.get_message(&mailbox, &envelope.id);
     match result {
@@ -652,7 +652,7 @@ fn fetch_for_reply(model: &mut Model, reply_all: bool) {
     let Some(mailbox) = model.selected_mailbox.clone() else {
         return;
     };
-    set_status(model, format!("Loading message {}...", envelope.id));
+    set_status(model, format!("Loading message {}…", envelope.id));
 
     let result = model.client.get_message(&mailbox, &envelope.id);
     match result {
@@ -668,7 +668,7 @@ fn fetch_for_forward(model: &mut Model) {
     let Some(mailbox) = model.selected_mailbox.clone() else {
         return;
     };
-    set_status(model, format!("Loading message {}...", envelope.id));
+    set_status(model, format!("Loading message {}…", envelope.id));
 
     let result = model.client.get_message(&mailbox, &envelope.id);
     match result {
@@ -688,7 +688,7 @@ fn do_copy(model: &mut Model) {
         return;
     };
 
-    set_status(model, format!("Copying to {}...", target.name));
+    set_status(model, format!("Copying to {}…", target.name));
     let result = model
         .client
         .copy_messages(&mailbox, &target.id, &[&envelope.id]);
@@ -709,7 +709,7 @@ fn do_move(model: &mut Model) {
         return;
     };
 
-    set_status(model, format!("Moving to {}...", target.name));
+    set_status(model, format!("Moving to {}…", target.name));
     let result = model
         .client
         .move_messages(&mailbox, &target.id, &[&envelope.id]);
@@ -736,7 +736,7 @@ fn do_flag(model: &mut Model, add: bool) {
     let flag = action.flag();
     let label = action.label();
     let verb = if add { "Adding" } else { "Removing" };
-    set_status(model, format!("{verb} flag {label}..."));
+    set_status(model, format!("{verb} flag {label}…"));
 
     let result = if add {
         model
@@ -763,7 +763,7 @@ fn do_flag(model: &mut Model, add: bool) {
 
 fn do_send(model: &mut Model) {
     let content = model.compose_content();
-    set_status(model, "Compiling message...");
+    set_status(model, "Compiling message…");
     let mime_bytes = match MmlCompilerBuilder::new().build(&content) {
         Ok(compiler) => match compiler.compile() {
             Ok(result) => match result.into_vec() {
@@ -793,7 +793,7 @@ fn do_send(model: &mut Model) {
     };
     let to_refs: Vec<&str> = to.iter().map(String::as_str).collect();
 
-    set_status(model, "Sending message...");
+    set_status(model, "Sending message…");
     let result = model.client.send_message(mime_bytes, &from, &to_refs);
     match result {
         Ok(()) => {
@@ -837,7 +837,7 @@ fn do_save_draft(model: &mut Model) {
     )
     .into_bytes();
 
-    set_status(model, "Saving to Drafts...");
+    set_status(model, "Saving to Drafts…");
 
     let result = model
         .client

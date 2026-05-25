@@ -165,7 +165,7 @@ Envelope dialog actions: Read, Reply, Reply All, Forward, Copy, Move, Add flag, 
 
 ### Composing messages
 
-Drafts are written in [MML](https://github.com/pimalaya/mml) and compiled to MIME on send. Headers (`From`, `To`, `Subject`...) live at the top of the buffer; the body and any MML directives (attachments, signing, encryption) follow.
+Drafts are written in [MML](https://github.com/pimalaya/mml) and compiled to MIME on send. Headers (`From`, `To`, `Subject`…) live at the top of the buffer; the body and any MML directives (attachments, signing, encryption) follow.
 
 Sending routes through SMTP when an `[accounts.<name>.smtp]` block is configured, otherwise through JMAP. Drafts can be saved to the `Drafts` mailbox at any time.
 
@@ -188,7 +188,7 @@ Special thanks to the [NLnet foundation](https://nlnet.nl/) and the [European Co
 - 2022 → 2023: [NGI Assure](https://nlnet.nl/project/Himalaya/)
 - 2023 → 2024: [NGI Zero Entrust](https://nlnet.nl/project/Pimalaya/)
 - 2024 → 2026: [NGI Zero Core](https://nlnet.nl/project/Pimalaya-PIM/)
-- *2027 in preparation...*
+- *2027 in preparation…*
 
 If you appreciate the project, feel free to donate using one of the following providers:
 

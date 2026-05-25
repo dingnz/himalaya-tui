@@ -63,7 +63,7 @@ pub struct Config {
     /// Composer keybinding flavor (Vim or Emacs). The CLI `--keybinds`
     /// flag overrides this; both default to Vim when omitted.
     pub keybinds: Option<Keybinds>,
-    /// Color theme: pick a preset (`dracula`, `one-dark`, ...) and/or
+    /// Color theme: pick a preset (`dracula`, `one-dark`, …) and/or
     /// override individual fields. Resolved into a [`Theme`] at
     /// startup.
     #[serde(default)]

@@ -17,7 +17,7 @@
 
 //! Resolved [`Theme`] used by every render function. Each themable
 //! element is a ratatui [`Style`], so background, foreground and
-//! modifiers (bold/italic/...) are tuned in one place. Presets are
+//! modifiers (bold/italic/…) are tuned in one place. Presets are
 //! plain `const` values in sibling files; [`Theme::resolve`] layers
 //! per-field overrides from [`crate::config::ThemeConfig`] on top via
 //! [`Style::patch`].

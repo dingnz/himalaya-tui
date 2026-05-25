@@ -54,7 +54,7 @@
 # individual fields below.
 #
 # Color values accept anything ratatui understands:
-#   - named ANSI: "black", "red", ..., "white", "dark-gray", "light-red", ...
+#   - named ANSI: "black", "red", …, "white", "dark-gray", "light-red", …
 #   - hex RGB:    "#ff8800"
 #   - 256-color:  "33" (xterm-256 palette index)
 #   - "reset":    terminal default
@@ -92,7 +92,7 @@
 #[theme.border-inactive]
 #fg = "gray"
 
-# Border of modal dialogs (Actions, Copy/Move To, Add/Remove Flag, ...).
+# Border of modal dialogs (Actions, Copy/Move To, Add/Remove Flag, …).
 #[theme.dialog-border]
 #fg = "yellow"
 
@@ -246,7 +246,7 @@ imap.sasl.plain.passwd.raw = "***"
 # Pick exactly one of `header`, `bearer`, `basic`.
 
 # Raw `Authorization` header value, used verbatim.
-#jmap.auth.header.raw = "Bearer eyJhbGciOiJ..."
+#jmap.auth.header.raw = "Bearer eyJhbGciOiJ…"
 #jmap.auth.header.command = "pass show fastmail-token"
 
 # OAuth 2.0 / API token bearer.
