@@ -831,11 +831,15 @@ fn do_preview(model: &mut Model) {
 }
 
 fn do_save_draft(model: &mut Model) {
-    let content = model.compose_content();
-    let raw = format!(
-        "From: \r\nTo: \r\nSubject: Draft\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n{content}"
-    )
-    .into_bytes();
+    // Drafts are unfinished by nature, so we save the composer buffer
+    // verbatim (raw MML, partial headers). IMAP APPEND requires CRLF
+    // line endings; edtui emits bare `\n`. Normalize first to avoid
+    // doubling up if a `\r\n` already exists, then re-CRLF.
+    let raw = model
+        .compose_content()
+        .replace("\r\n", "\n")
+        .replace('\n', "\r\n")
+        .into_bytes();
 
     set_status(model, "Saving to Drafts…");
 
