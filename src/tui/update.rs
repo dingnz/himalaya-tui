@@ -39,9 +39,11 @@ use mml::{
     },
 };
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use tui_input::InputRequest;
 
 use crate::tui::model::{
-    BottomPanel, ComposeAction, Dialog, EnvelopeAction, FlagAction, Message, Model, Panel,
+    BottomPanel, ComposeAction, Dialog, EnvelopeAction, FlagAction, MAILBOX_DIALOG_VISIBLE,
+    Message, Model, Panel,
 };
 
 pub fn apply_all(model: &mut Model, mut next_msg: Option<Message>) {
@@ -117,6 +119,11 @@ fn apply(model: &mut Model, msg: Message) -> Option<Message> {
         }
         Message::OpenSystemEditor => {
             OpenSystemEditor.execute(&mut model.editor_state);
+            None
+        }
+
+        Message::MailboxFilterKey(key) => {
+            mailbox_filter_input(model, key);
             None
         }
 
@@ -196,10 +203,10 @@ fn translate_key(model: &Model, key: KeyEvent) -> Option<Message> {
         return Some(Message::EditorKey(key));
     }
 
-    // Alias Vim/Emacs keys onto universal arrows so navigation works
-    // regardless of the user's flavor.
+    let in_mailbox_dialog = matches!(model.dialog, Some(Dialog::CopyTo | Dialog::MoveTo));
+
     let translated = match key.modifiers {
-        KeyModifiers::NONE => match key.code {
+        KeyModifiers::NONE if !in_mailbox_dialog => match key.code {
             KeyCode::Char('j') | KeyCode::Char('n') => Some(KeyCode::Down),
             KeyCode::Char('k') | KeyCode::Char('p') => Some(KeyCode::Up),
             KeyCode::Char('q') => Some(KeyCode::Esc),
@@ -229,6 +236,7 @@ fn translate_key(model: &Model, key: KeyEvent) -> Option<Message> {
             KeyCode::Up => Some(Message::DialogPrevious),
             KeyCode::Enter => Some(Message::DialogConfirm),
             KeyCode::Esc => Some(Message::DialogClose),
+            _ if in_mailbox_dialog => Some(Message::MailboxFilterKey(key)),
             _ => None,
         };
     }
@@ -247,6 +255,25 @@ fn translate_key(model: &Model, key: KeyEvent) -> Option<Message> {
         KeyCode::Enter => Some(Message::Enter),
         _ => None,
     }
+}
+
+fn mailbox_filter_input(model: &mut Model, key: KeyEvent) {
+    let req = match (key.code, key.modifiers) {
+        (KeyCode::Char(c), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
+            Some(InputRequest::InsertChar(c))
+        }
+        (KeyCode::Backspace, _) => Some(InputRequest::DeletePrevChar),
+        (KeyCode::Delete, _) => Some(InputRequest::DeleteNextChar),
+        (KeyCode::Left, _) => Some(InputRequest::GoToPrevChar),
+        (KeyCode::Right, _) => Some(InputRequest::GoToNextChar),
+        (KeyCode::Home, _) => Some(InputRequest::GoToStart),
+        (KeyCode::End, _) => Some(InputRequest::GoToEnd),
+        _ => None,
+    };
+    let Some(req) = req else { return };
+    model.mailbox_filter.handle(req);
+    // Filter changed; snap selection to top of the narrowed list.
+    model.dialog_index = 0;
 }
 
 fn esc_cascade(model: &mut Model) -> Option<Message> {
@@ -414,18 +441,32 @@ fn open_dialog(model: &mut Model, dialog: Dialog) {
 
 fn close_dialog(model: &mut Model) {
     model.dialog = None;
+    // The filter is dialog-local state; closing the dialog resets it
+    // so the next open starts from a clean slate.
+    model.mailbox_filter.reset();
 }
 
 fn dialog_next(model: &mut Model) {
     let count = model.dialog_item_count();
-    if count > 0 {
+    if count == 0 {
+        return;
+    }
+    if matches!(model.dialog, Some(Dialog::CopyTo | Dialog::MoveTo)) {
+        let max = MAILBOX_DIALOG_VISIBLE.min(count) - 1;
+        model.dialog_index = (model.dialog_index + 1).min(max);
+    } else {
         model.dialog_index = (model.dialog_index + 1) % count;
     }
 }
 
 fn dialog_previous(model: &mut Model) {
     let count = model.dialog_item_count();
-    if count > 0 {
+    if count == 0 {
+        return;
+    }
+    if matches!(model.dialog, Some(Dialog::CopyTo | Dialog::MoveTo)) {
+        model.dialog_index = model.dialog_index.saturating_sub(1);
+    } else {
         model.dialog_index = model.dialog_index.checked_sub(1).unwrap_or(count - 1);
     }
 }
@@ -676,7 +717,10 @@ fn fetch_for_forward(model: &mut Model) {
 }
 
 fn do_copy(model: &mut Model) {
-    let target = model.mailboxes.get(model.dialog_index).cloned();
+    let target = model
+        .filtered_mailboxes()
+        .get(model.dialog_index)
+        .map(|m| (**m).clone());
     close_dialog(model);
     let Some(target) = target else { return };
     let Some(envelope) = model.selected_envelope().cloned() else {
@@ -697,7 +741,10 @@ fn do_copy(model: &mut Model) {
 }
 
 fn do_move(model: &mut Model) {
-    let target = model.mailboxes.get(model.dialog_index).cloned();
+    let target = model
+        .filtered_mailboxes()
+        .get(model.dialog_index)
+        .map(|m| (**m).clone());
     close_dialog(model);
     let Some(target) = target else { return };
     let Some(envelope) = model.selected_envelope().cloned() else {

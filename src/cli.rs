@@ -37,6 +37,7 @@ use pimalaya_cli::{
 };
 use pimalaya_config::toml::TomlConfig;
 use simplelog::WriteLogger;
+use tui_input::Input;
 
 use crate::{
     config::Config,
@@ -203,6 +204,7 @@ impl Cli {
             mailboxes: Vec::new(),
             mailbox_index: 0,
             mailbox_offset: 0,
+            mailbox_filter: Input::default(),
             envelopes: Vec::new(),
             envelope_index: 0,
             envelope_offset: 0,

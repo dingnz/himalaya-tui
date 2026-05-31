@@ -1162,6 +1162,7 @@ dependencies = [
  "shellexpand",
  "simplelog",
  "toml",
+ "tui-input",
  "uds_windows",
  "url",
  "uuid",
@@ -3583,6 +3584,15 @@ dependencies = [
  "memchr",
  "nom 8.0.0",
  "petgraph",
+]
+
+[[package]]
+name = "tui-input"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "911e93158bf80bbc94bad533b2b16e3d711e1132d69a6a6980c3920a63422c19"
+dependencies = [
+ "unicode-width",
 ]
 
 [[package]]

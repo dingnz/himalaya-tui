@@ -29,8 +29,14 @@ use io_email::{
 };
 use ratatui::crossterm::event::KeyEvent;
 use serde::{Deserialize, Serialize};
+use tui_input::Input;
 
 use crate::tui::theme::Theme;
+
+/// Number of mailbox rows visible inside the CopyTo/MoveTo dialog
+/// list block. Both the view (frame sizing) and the update layer
+/// (selection clamping) depend on this constant.
+pub const MAILBOX_DIALOG_VISIBLE: usize = 10;
 
 pub struct Model {
     pub running: bool,
@@ -38,6 +44,7 @@ pub struct Model {
     pub mailboxes: Vec<Mailbox>,
     pub mailbox_index: usize,
     pub mailbox_offset: usize,
+    pub mailbox_filter: Input,
     pub envelopes: Vec<Envelope>,
     pub envelope_index: usize,
     pub envelope_offset: usize,
@@ -78,11 +85,29 @@ impl Model {
             .map(|m| m.name.as_str())
     }
 
+    /// Mailboxes visible after applying the filter input.
+    /// Case-insensitive substring match on the name; empty filter
+    /// returns the full list.
+    pub fn filtered_mailboxes(&self) -> Vec<&Mailbox> {
+        let needle = self.mailbox_filter.value();
+        if needle.is_empty() {
+            return self.mailboxes.iter().collect();
+        }
+
+        let needle = needle.to_lowercase();
+
+        // TODO: improve the search algorithm
+        self.mailboxes
+            .iter()
+            .filter(|m| m.name.to_lowercase().contains(&needle))
+            .collect()
+    }
+
     pub fn dialog_item_count(&self) -> usize {
         match self.dialog {
             Some(Dialog::Envelope) => EnvelopeAction::ALL.len(),
             Some(Dialog::Compose) => ComposeAction::ALL.len(),
-            Some(Dialog::CopyTo) | Some(Dialog::MoveTo) => self.mailboxes.len(),
+            Some(Dialog::CopyTo) | Some(Dialog::MoveTo) => self.filtered_mailboxes().len(),
             Some(Dialog::FlagAdd) | Some(Dialog::FlagRemove) => FlagAction::ALL.len(),
             None => 0,
         }
@@ -276,6 +301,8 @@ pub enum Message {
 
     EditorKey(KeyEvent),
     OpenSystemEditor,
+
+    MailboxFilterKey(KeyEvent),
 
     DialogNext,
     DialogPrevious,

@@ -38,7 +38,8 @@ use ratatui::{
 
 use crate::tui::{
     model::{
-        BottomPanel, ComposeAction, Dialog, EnvelopeAction, FlagAction, Keybinds, Model, Panel,
+        BottomPanel, ComposeAction, Dialog, EnvelopeAction, FlagAction, Keybinds,
+        MAILBOX_DIALOG_VISIBLE, Model, Panel,
     },
     theme::Theme,
 };
@@ -406,14 +407,8 @@ fn render_dialog_overlay(frame: &mut Frame, model: &Model) {
             " Compose ",
             &ComposeAction::ALL.map(|a| a.label()),
         ),
-        Some(Dialog::CopyTo) => {
-            let labels: Vec<&str> = model.mailboxes.iter().map(|m| m.name.as_str()).collect();
-            render_dialog(frame, &theme, model.dialog_index, " Copy to ", &labels);
-        }
-        Some(Dialog::MoveTo) => {
-            let labels: Vec<&str> = model.mailboxes.iter().map(|m| m.name.as_str()).collect();
-            render_dialog(frame, &theme, model.dialog_index, " Move to ", &labels);
-        }
+        Some(Dialog::CopyTo) => render_mailbox_dialog(frame, model, " Copy to "),
+        Some(Dialog::MoveTo) => render_mailbox_dialog(frame, model, " Move to "),
         Some(Dialog::FlagAdd) => render_dialog(
             frame,
             &theme,
@@ -430,6 +425,72 @@ fn render_dialog_overlay(frame: &mut Frame, model: &Model) {
         ),
         None => {}
     }
+}
+
+/// Two centered stacked frames: top has the title + a `> ` prompt
+/// and the filter input; bottom is an untitled, fixed-height results
+/// frame so the dialog size does not jump as the filter narrows.
+fn render_mailbox_dialog(frame: &mut Frame, model: &Model, title: &str) {
+    const INPUT_BOX_HEIGHT: u16 = 3;
+    const PROMPT: &str = "> ";
+
+    let list_box_height = MAILBOX_DIALOG_VISIBLE as u16 + 2;
+
+    let total_height = INPUT_BOX_HEIGHT + list_box_height;
+    let area = centered_rect_fixed_height(40, total_height, frame.area());
+
+    frame.render_widget(Clear, area);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(INPUT_BOX_HEIGHT),
+            Constraint::Length(list_box_height),
+        ])
+        .split(area);
+
+    let input_area = chunks[0];
+    let list_area = chunks[1];
+
+    let input_block = Block::default()
+        .title(title)
+        .borders(Borders::ALL)
+        .border_style(model.theme.dialog_border);
+    let input_inner = input_block.inner(input_area);
+    frame.render_widget(input_block, input_area);
+
+    let filter_value = model.mailbox_filter.value();
+    frame.render_widget(
+        Paragraph::new(format!("{PROMPT}{filter_value}")),
+        input_inner,
+    );
+
+    let cursor_col = input_inner.x
+        + (PROMPT.len() as u16 + model.mailbox_filter.visual_cursor() as u16)
+            .min(input_inner.width.saturating_sub(1));
+    frame.set_cursor_position((cursor_col, input_inner.y));
+
+    let list_block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(model.theme.dialog_border);
+    let list_inner = list_block.inner(list_area);
+    frame.render_widget(list_block, list_area);
+
+    let items: Vec<ListItem> = model
+        .filtered_mailboxes()
+        .iter()
+        .take(MAILBOX_DIALOG_VISIBLE)
+        .enumerate()
+        .map(|(i, m)| {
+            ListItem::new(Line::from(if i == model.dialog_index {
+                Span::styled(format!("> {}", m.name), model.theme.cursor)
+            } else {
+                Span::styled(&m.name, model.theme.message_body)
+            }))
+        })
+        .collect();
+
+    frame.render_widget(List::new(items), list_inner);
 }
 
 fn render_dialog(
