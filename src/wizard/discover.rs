@@ -417,6 +417,7 @@ fn build_imap_config(host: &str, port: u16, starttls: bool, sasl: SaslConfig) ->
         tls: Default::default(),
         starttls,
         sasl: Some(sasl),
+        id: Default::default(),
     }
 }
 
