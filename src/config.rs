@@ -120,6 +120,7 @@ pub enum PresetConfig {
     Default,
     DraculaDark,
     OneLight,
+    TokyoNight,
 }
 
 impl PresetConfig {
@@ -128,6 +129,7 @@ impl PresetConfig {
             PresetConfig::Default => theme::default::THEME,
             PresetConfig::DraculaDark => theme::dracula_dark::THEME,
             PresetConfig::OneLight => theme::one_light::THEME,
+            PresetConfig::TokyoNight => theme::tokyo_night::THEME,
         }
     }
 }
